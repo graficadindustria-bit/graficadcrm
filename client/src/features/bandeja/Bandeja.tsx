@@ -31,6 +31,8 @@ import MiEmpresa from '../mi-empresa/MiEmpresa';
 import Configuracion from '../configuracion/Configuracion';
 import Programados from '../programados/Programados';
 import Oportunidades from '../oportunidades/Oportunidades';
+import Cotizador from '../graficad/Cotizador';
+import CatalogoTarifas from '../graficad/CatalogoTarifas';
 import { EstadoVacio, useToast } from '../../components/ui';
 import type { Conversacion, Mensaje, RespuestaAutomatica, RespuestaRapida } from '../../lib/tipos';
 
@@ -68,6 +70,8 @@ export default function Bandeja() {
   const [seccion, setSeccion] = useState('chats');
   const [seleccionada, setSeleccionada] = useState<Conversacion | null>(null);
   const [mostrarPanelContacto, setMostrarPanelContacto] = useState(false);
+  // Chat desde el que se tocó "Cotizar": el cotizador arranca con ese cliente.
+  const [cotizarPara, setCotizarPara] = useState<Conversacion | null>(null);
   const [respuestasRapidas, setRespuestasRapidas] = useState<RespuestaRapida[]>([]);
   const [respuestasAutomaticas, setRespuestasAutomaticas] = useState<RespuestaAutomatica[]>([]);
 
@@ -204,6 +208,8 @@ export default function Bandeja() {
     if (seccion === 'configuracion') return <Configuracion />;
     if (seccion === 'programados') return <Programados />;
     if (seccion === 'oportunidades') return <Oportunidades onAbrirChat={abrirChatDeContacto} />;
+    if (seccion === 'cotizador') return <Cotizador conversaciones={conv.conversaciones} conversacionInicial={cotizarPara} onAbrirChat={abrirChatDeContacto} />;
+    if (seccion === 'tarifas') return <CatalogoTarifas />;
     return <EstadoVacio icono={seccionActual.icon} titulo={seccionActual.label} texto="Esta sección todavía no está construida." />;
   };
   const alternarPlegado = () => {
@@ -392,6 +398,7 @@ export default function Bandeja() {
       onResolver={() => conv.resolver(seleccionada)}
       onReclamar={() => conv.reclamar(seleccionada)}
       onLiberar={() => conv.liberar(seleccionada)}
+      onCotizar={() => { setCotizarPara(seleccionada); setSeccion('cotizador'); }}
       onVolver={esMovil ? () => setSeleccionada(null) : undefined}
     />
   );

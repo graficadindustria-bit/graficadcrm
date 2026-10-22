@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, MoreVertical, PanelRight, User } from 'lucide-react';
+import { ArrowLeft, Calculator, Check, MoreVertical, PanelRight, User } from 'lucide-react';
 import { ESTADO_CONVERSACION_STYLE, colorEtiquetaWhatsapp } from '../../lib/tema';
 import { inicialesDe, nombreConversacion, tieneNombre } from './utils';
 import { useContacto } from './hooks/useContacto';
@@ -25,6 +25,8 @@ interface HiloMensajesProps {
   onResolver: () => void;
   onReclamar: () => void;
   onLiberar: () => void;
+  /** Abre el cotizador de Graficad con este chat como cliente. */
+  onCotizar?: () => void;
   /** Presente solo en la vista celular: muestra la flecha de volver y usa el layout mobile. */
   onVolver?: () => void;
 }
@@ -55,6 +57,7 @@ export default function HiloMensajes({
   onResolver,
   onReclamar,
   onLiberar,
+  onCotizar,
   onVolver,
 }: HiloMensajesProps) {
   const { contacto, setContacto } = useContacto(seleccionada.contacto_telefono.split('@')[0], usuario.empresa_id);
@@ -127,6 +130,18 @@ export default function HiloMensajes({
             )}
           </div>
         </div>
+        {onCotizar && (
+          <button
+            onClick={onCotizar}
+            title="Cotizar este pedido"
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-[10px] px-3 py-2 font-semibold text-[13.5px] whitespace-nowrap"
+            style={{ border: '1px solid var(--line-2)', color: 'var(--fg)', backgroundColor: 'var(--surface)' }}
+          >
+            <Calculator size={15} />
+            <span className={esMovil ? 'sr-only' : ''}>Cotizar</span>
+          </button>
+        )}
+
         <button
           onClick={accionPrincipal.onClick}
           className="shrink-0 inline-flex items-center gap-1.5 rounded-[10px] px-4 py-2 font-semibold text-[13.5px] whitespace-nowrap"
