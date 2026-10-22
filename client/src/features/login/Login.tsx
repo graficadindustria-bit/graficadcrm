@@ -55,7 +55,7 @@ export default function Login() {
           </div>
 
           <div className="flex flex-col gap-4">
-            <h2 className="m-0 text-2xl font-bold leading-snug text-white">Bienvenido a GRAFICAD! transformamos tus ideas en soluciones gráficas de alto impacto. Ofrecemos servicios de corte y diseño en acrílicos, Pvc, foam, madera y variedad de materiales, creando acabados precisos y personalizados que hacen destacar cada proyecto. 
+            <h2 className="m-0 text-2xl font-bold leading-snug text-white">Bienvenido a GRAFICAD! 
 .</h2>
             <div className="flex flex-col gap-2.5">
               {CARACTERISTICAS.map((texto) => (
