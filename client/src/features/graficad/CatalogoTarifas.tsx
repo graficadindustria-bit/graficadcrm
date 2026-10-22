@@ -53,14 +53,15 @@ export default function CatalogoTarifas() {
   if (cargando) return <div className="p-6 text-xs" style={{ color: TEXTO_TERCIARIO }}>Cargando…</div>;
 
   return (
-    <div className="flex-1 min-w-0 overflow-y-auto p-4 md:p-6 flex flex-col gap-4">
+    <div className="flex-1 min-w-0 overflow-y-auto">
+      <div className="p-4 md:p-6 flex flex-col gap-4">
       <EncabezadoPagina
         titulo="Catálogo y tarifas"
         subtitulo={guardadas ? 'Lo que usa el cotizador para calcular. Un cambio aquí vale para todas las cotizaciones nuevas.' : 'Todavía se usan las tarifas por defecto (Excel de corte y lista de la página web). Guardá para fijarlas.'}
         accion={
           <div className="flex gap-2 flex-wrap">
             <Boton variante="fantasma" icono={RotateCcw} onClick={() => setBorrador(TARIFAS_POR_DEFECTO)}>Valores por defecto</Boton>
-            <Boton variante="primario" icono={Save} disabled={!cambiado || guardando || sinInstalar} onClick={onGuardar}>{guardando ? 'Guardando…' : 'Guardar'}</Boton>
+            <Boton variante="primario" icono={Save} disabled={(!cambiado && guardadas) || guardando || sinInstalar} onClick={onGuardar}>{guardando ? 'Guardando…' : 'Guardar'}</Boton>
           </div>
         }
       />
@@ -143,6 +144,7 @@ export default function CatalogoTarifas() {
           Los recuadros con borde ámbar son valores supuestos (velocidades de corte que no estaban en el Excel). Al corregirlos dejan de marcarse.
         </p>
       </Tarjeta>
+      </div>
     </div>
   );
 }

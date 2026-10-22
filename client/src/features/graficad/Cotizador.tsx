@@ -224,7 +224,8 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
   }, [tarifas]);
 
   return (
-    <div className="flex-1 min-w-0 overflow-y-auto p-4 md:p-6 flex flex-col gap-4">
+    <div className="flex-1 min-w-0 overflow-y-auto">
+      <div className="p-4 md:p-6 flex flex-col gap-4">
       <EncabezadoPagina
         titulo="Cotizador"
         subtitulo="Un formulario, dos documentos: la cotización para el cliente y la orden de corte para el taller."
@@ -468,6 +469,7 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
             </Tarjeta>
           ))
         )}
+      </div>
       </div>
     </div>
   );
