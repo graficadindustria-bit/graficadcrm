@@ -1,0 +1,30 @@
+# Un CRM por estudiante: `systemctl start crm@ana` corre el de Ana con su
+# propio usuario de Linux, su .env y un tope de memoria, para que un CRM que
+# se descontrola no tire abajo a los demás.
+[Unit]
+Description=CRM de %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=crm-%i
+Group=crm-%i
+WorkingDirectory=/srv/crm/%i/actual/server
+EnvironmentFile=/srv/crm/%i/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node --max-old-space-size=384 dist/index.js
+Restart=always
+RestartSec=5
+
+MemoryHigh=420M
+MemoryMax=520M
+CPUQuota=100%
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/crm/%i/sesiones
+
+[Install]
+WantedBy=multi-user.target

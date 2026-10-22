@@ -24,7 +24,7 @@ node -v
 git -v
 ```
 
-Si cada uno muestra un número de versión, está todo bien.
+Si cada uno muestra un número de versión, está todo bien. **Ojo:** `node -v` tiene que decir **v22** o más. Si dice v20 o v18, instalá la versión LTS de nodejs.org **antes** de seguir (con Node viejo, `npm install` queda incompleto y después nada funciona).
 
 ---
 
@@ -125,7 +125,9 @@ Para volver a prenderlo otro día: abrí la terminal en la carpeta y `npm run de
 
 | Ves esto | Qué hacer |
 |---|---|
+| **"native WebSocket not found"** o **"Cannot find native binding"** | Tenés Node viejo. Instalá Node 22 LTS, cerrá y abrí PowerShell, borrá la carpeta `node_modules` y corré `npm install` de nuevo. |
 | `node` o `git` "no se reconoce" | Cerrá y abrí la terminal de nuevo. Si sigue, reinstalá el programa. |
+| Supabase dice **"Failed to fetch (api.supabase.com)"** al apretar Run | Es la conexión, no el código. Recargá la página (F5). Si en **Table Editor** ya ves las tablas, se instaló bien; si no hay ninguna, apretá Run otra vez. |
 | `npm run configurar` dice **"La base está vacía"** | Te faltó el Paso 2 (pegar `instalar.sql` y apretar Run). |
 | `npm run configurar` dice **"No me pude conectar"** | Revisá la Project URL y que pegaste la clave **secreta**, no la pública. |
 | La página dice "Faltan las variables..." | Corré `npm run configurar` otra vez. |

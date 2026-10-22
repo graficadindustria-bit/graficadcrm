@@ -191,7 +191,7 @@ export default function Bandeja() {
 
   const contenidoOtraSeccion = () => {
     if (seccion === 'usuarios') return <Usuarios />;
-    if (seccion === 'contactos') return <Contactos />;
+    if (seccion === 'contactos') return <Contactos onAbrirChat={abrirChatDeContacto} />;
     if (seccion === 'pipeline') return <Pipeline onAbrirChat={abrirChatDeContacto} />;
     if (seccion === 'respuestas') return <RespuestasRapidas />;
     if (seccion === 'bot') return <RespuestasAutomaticas />;

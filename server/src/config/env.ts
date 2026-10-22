@@ -8,7 +8,7 @@ const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 dotenv.config({ path: path.join(raiz, '.env') });
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
-  console.error('Faltan variables de entorno. Corré `npm run configurar` en la raíz del proyecto.');
+  console.error('Faltan SUPABASE_URL / SUPABASE_SERVICE_KEY. En tu compu: corré `npm run configurar`. En el servidor: revisá los secretos de tu repo en GitHub.');
   process.exit(1);
 }
 

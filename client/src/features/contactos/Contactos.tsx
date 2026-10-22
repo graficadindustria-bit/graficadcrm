@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Search, Upload } from 'lucide-react';
+import { Download, MessageCircle, Search, Upload } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../lib/AuthContext';
 import { tinte, BORDE, BORDE_FILA, CHIP_LINEA, NAVY, SOMBRA_CARD, TEMPERATURA_STYLE, TEXTO_PRIMARIO, TEXTO_SECUNDARIO, TEXTO_TERCIARIO, colorAvatar, colorEtiquetaWhatsapp } from '../../lib/tema';
 import type { Contacto, EtapaVenta, EtiquetaWhatsapp, TipoEtapa } from '../../lib/tipos';
 import DetalleLead from './DetalleLead';
 import ImportarContactos from './ImportarContactos';
+import { ModalWhatsapp } from './EscribirWhatsapp';
 import { formatoDuracion, useMetricasRespuesta } from '../../lib/metricasRespuesta';
 
 interface LineaSimple {
@@ -71,7 +72,7 @@ function descargarCsv(
   URL.revokeObjectURL(url);
 }
 
-export default function Contactos() {
+export default function Contactos({ onAbrirChat }: { onAbrirChat?: (telefono: string) => void }) {
   const { usuario } = useAuth();
   const [contactos, setContactos] = useState<Contacto[]>([]);
   const [lineas, setLineas] = useState<LineaSimple[]>([]);
@@ -86,6 +87,7 @@ export default function Contactos() {
   const [etiquetaFiltro, setEtiquetaFiltro] = useState('todas');
   const [telefonoAbierto, setTelefonoAbierto] = useState<string | null>(null);
   const [importando, setImportando] = useState(false);
+  const [escribiendoA, setEscribiendoA] = useState<Contacto | null>(null);
   const [periodo, setPeriodo] = useState<'todos' | 'hoy' | '7d' | '30d' | 'mes' | 'personalizado'>('todos');
   const [desdeFecha, setDesdeFecha] = useState('');
   const [hastaFecha, setHastaFecha] = useState('');
@@ -210,12 +212,27 @@ export default function Contactos() {
 
   if (telefonoAbierto) {
     return (
-      <DetalleLead telefono={telefonoAbierto} onVolver={() => setTelefonoAbierto(null)} />
+      <DetalleLead
+        telefono={telefonoAbierto}
+        telefonoChat={conversacionPorTelefono[telefonoAbierto]?.contacto_telefono}
+        lineaSugerida={conversacionPorTelefono[telefonoAbierto]?.linea_id}
+        onVolver={() => setTelefonoAbierto(null)}
+        onAbrirChat={onAbrirChat}
+      />
     );
   }
 
   return (
     <div className="flex-1 flex min-h-0 min-w-0">
+      {escribiendoA && (
+        <ModalWhatsapp
+          nombre={escribiendoA.nombre || escribiendoA.telefono}
+          telefono={conversacionPorTelefono[escribiendoA.telefono]?.contacto_telefono || escribiendoA.telefono}
+          lineaSugerida={conversacionPorTelefono[escribiendoA.telefono]?.linea_id}
+          onCerrar={() => setEscribiendoA(null)}
+          onAbrirChat={onAbrirChat && conversacionPorTelefono[escribiendoA.telefono] ? () => onAbrirChat(escribiendoA.telefono) : undefined}
+        />
+      )}
       {importando && <ImportarContactos telefonosExistentes={new Set(contactos.map((c) => c.telefono))} onCerrar={() => setImportando(false)} onImportado={cargar} />}
       <div className="flex-1 flex flex-col min-w-0">
         <div className="px-4 md:px-8 py-4 md:py-6 flex flex-col gap-4 overflow-y-auto" style={{ background: 'var(--surface-2)' }}>
@@ -346,20 +363,37 @@ export default function Contactos() {
               const etapa = etapaDe(c);
               const conv = conversacionPorTelefono[c.telefono];
               return (
-                <button
+                // div y no <button>: adentro va el botón de WhatsApp y no se
+                // pueden anidar botones.
+                <div
                   key={c.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setTelefonoAbierto(c.telefono)}
-                  className="w-full grid grid-cols-1 md:grid gap-1.5 md:gap-3 items-center px-4 py-3 text-left"
+                  onKeyDown={(e) => e.key === 'Enter' && setTelefonoAbierto(c.telefono)}
+                  className="w-full grid grid-cols-1 md:grid gap-1.5 md:gap-3 items-center px-4 py-3 text-left cursor-pointer"
                   style={{ gridTemplateColumns: '2fr 1.2fr 1.1fr 1.6fr .8fr 1.5fr 1.2fr', borderBottom: `1px solid ${BORDE_FILA}` }}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 rounded-full flex items-center justify-center text-[12.5px] font-semibold shrink-0" style={{ backgroundColor: colorAvatar(c.telefono), color: 'white' }}>
                       {(c.nombre || c.telefono).slice(-2)}
                     </div>
-                    <div className="min-w-0 flex flex-col gap-0.5">
+                    <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                       <span className="text-[13.5px] font-semibold truncate" style={{ color: TEXTO_PRIMARIO }}>{c.nombre || c.telefono}</span>
                       <span className="text-xs truncate" style={{ color: TEXTO_SECUNDARIO, fontFamily: 'var(--fuente-mono)' }}>{c.telefono}{c.nombre ? ` · creado ${new Date(c.creado_en).toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: '2-digit' })}` : ''}</span>
                     </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEscribiendoA(c);
+                      }}
+                      aria-label={`Escribir por WhatsApp a ${c.nombre || c.telefono}`}
+                      title="Escribir por WhatsApp"
+                      className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: '#E7F8EE', color: '#128C4B' }}
+                    >
+                      <MessageCircle size={15} />
+                    </button>
                   </div>
                   <span className="hidden md:block text-[12.5px] truncate" style={{ color: TEXTO_SECUNDARIO }}>{c.producto_interes || '—'}</span>
                   <span className="hidden md:block">
@@ -393,7 +427,7 @@ export default function Contactos() {
                   <span className="hidden md:block text-[12.5px] truncate" style={{ color: conv?.agente_asignado_id ? TEXTO_SECUNDARIO : TEXTO_TERCIARIO, fontStyle: conv?.agente_asignado_id ? 'normal' : 'italic' }}>
                     {conv?.agente_asignado_id ? nombreUsuario(conv.agente_asignado_id) : 'Sin asignar'}
                   </span>
-                </button>
+                </div>
               );
             })}
           </div>

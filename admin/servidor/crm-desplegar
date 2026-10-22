@@ -1,0 +1,66 @@
+#!/bin/bash
+# Publica una versión nueva del CRM de un estudiante. Lo ejecuta GitHub
+# Actions por SSH: la llave de despliegue de cada estudiante tiene este
+# comando forzado, así que solo puede hacer esto y solo con su propio CRM.
+#
+# Recibe por la entrada estándar el paquete .tar.gz que armó GitHub (código
+# compilado + dependencias + .env) y:
+#   1. lo descomprime en versiones/<fecha>,
+#   2. cambia el enlace `actual` y reinicia el CRM,
+#   3. espera a que /salud responda; si no responde, vuelve a la versión anterior,
+#   4. deja solo las últimas 3 versiones.
+set -euo pipefail
+
+NOMBRE="$1"
+BASE="/srv/crm/$NOMBRE"
+PUERTO="$(cat "$BASE/puerto")"
+DOMINIO="$(cat /etc/crm/dominio)"
+VERSION="$(date +%Y%m%d-%H%M%S)"
+DESTINO="$BASE/versiones/$VERSION"
+
+echo "→ Recibiendo la versión $VERSION de $NOMBRE..."
+mkdir -p "$DESTINO"
+tar -xzf - -C "$DESTINO"
+
+if [ ! -f "$DESTINO/server/dist/index.js" ]; then
+  echo "✗ El paquete no trae el servidor compilado. No se publicó nada."
+  rm -rf "$DESTINO"
+  exit 1
+fi
+
+# El .env viene en el paquete con las claves de Supabase; el puerto y la
+# carpeta de sesiones los pone el servidor (el estudiante no los elige).
+cp -f "$BASE/.env" "$BASE/.env.anterior" 2>/dev/null || true
+{
+  grep -vE '^(PORT|AUTH_DIR)=' "$DESTINO/.env" || true
+  echo "PORT=$PUERTO"
+  echo "AUTH_DIR=$BASE/sesiones"
+} > "$BASE/.env"
+chmod 600 "$BASE/.env"
+rm -f "$DESTINO/.env"
+
+ANTERIOR="$(readlink -f "$BASE/actual" 2>/dev/null || true)"
+ln -sfn "$DESTINO" "$BASE/actual"
+sudo /usr/bin/systemctl restart "crm@$NOMBRE"
+
+echo "→ Esperando que el CRM arranque..."
+for _ in $(seq 1 30); do
+  if curl -fsS "http://127.0.0.1:$PUERTO/salud" >/dev/null 2>&1; then
+    echo "✓ Publicado. Tu CRM ya está en https://$NOMBRE.$DOMINIO"
+    # Limpieza: quedan las 3 versiones más nuevas.
+    ls -1dt "$BASE"/versiones/*/ | tail -n +4 | xargs -r rm -rf
+    exit 0
+  fi
+  sleep 1
+done
+
+echo "✗ La versión nueva no arrancó. Últimas líneas del registro:"
+sudo /usr/bin/journalctl -u "crm@$NOMBRE" -n 40 --no-pager || true
+if [ -n "$ANTERIOR" ] && [ -d "$ANTERIOR" ]; then
+  echo "→ Vuelvo a la versión anterior, tu CRM sigue funcionando como antes."
+  ln -sfn "$ANTERIOR" "$BASE/actual"
+  cp -f "$BASE/.env.anterior" "$BASE/.env" 2>/dev/null || true
+  sudo /usr/bin/systemctl restart "crm@$NOMBRE"
+fi
+rm -rf "$DESTINO"
+exit 1

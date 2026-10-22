@@ -1,15 +1,21 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Check, Clock, FileText, Plus } from 'lucide-react';
+import { ArrowLeft, Check, Clock, FileText, MessageCircle, Plus } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../lib/AuthContext';
 import { useContacto } from '../bandeja/hooks/useContacto';
 import { useEtapasVenta } from '../bandeja/hooks/useEtapasVenta';
 import { tinte, AMBER, BLUE, BORDE, FONDO_CONTENIDO, SOMBRA_CARD, TEAL, TEMPERATURA_STYLE, TEXTO_PRIMARIO, TEXTO_SECUNDARIO, TEXTO_TERCIARIO, colorAvatar, colorEtiquetaWhatsapp } from '../../lib/tema';
+import { FormWhatsapp } from './EscribirWhatsapp';
 import type { Contacto, EtiquetaWhatsapp, Nota, RespuestaRapida, Tarea, Temperatura } from '../../lib/tipos';
 
 interface DetalleLeadProps {
   telefono: string;
+  // contacto_telefono de su conversación más reciente (puede traer el @lid)
+  // y la línea por la que habló, para responder por el mismo lado.
+  telefonoChat?: string;
+  lineaSugerida?: string | null;
   onVolver: () => void;
+  onAbrirChat?: (telefono: string) => void;
 }
 
 function Card({ titulo, children }: { titulo: string; children: React.ReactNode }) {
@@ -32,7 +38,7 @@ function Campo({ etiqueta, valor }: { etiqueta: string; valor: string }) {
 
 type EventoTimeline = { id: string; tipo: 'nota' | 'tarea'; fecha: string; nota?: Nota; tarea?: Tarea };
 
-export default function DetalleLead({ telefono: telefonoCrudo, onVolver }: DetalleLeadProps) {
+export default function DetalleLead({ telefono: telefonoCrudo, telefonoChat, lineaSugerida, onVolver, onAbrirChat }: DetalleLeadProps) {
   const telefono = telefonoCrudo.split('@')[0];
   const { usuario } = useAuth();
   const { contacto, cargando, setContacto } = useContacto(telefono, usuario?.empresa_id);
@@ -42,6 +48,7 @@ export default function DetalleLead({ telefono: telefonoCrudo, onVolver }: Detal
   const [etiquetas, setEtiquetas] = useState<EtiquetaWhatsapp[]>([]);
   const [respuestasRapidas, setRespuestasRapidas] = useState<RespuestaRapida[]>([]);
   const [notaBorrador, setNotaBorrador] = useState('');
+  const [mensajeWhatsapp, setMensajeWhatsapp] = useState('');
   const [valorEstimado, setValorEstimado] = useState('');
   const [probabilidadCierre, setProbabilidadCierre] = useState('');
   const [oportunidadGuardada, setOportunidadGuardada] = useState(false);
@@ -161,6 +168,15 @@ export default function DetalleLead({ telefono: telefonoCrudo, onVolver }: Detal
           <ArrowLeft size={15} /> Contactos
         </button>
         <span className="text-[15px] font-bold flex-1 truncate" style={{ color: TEXTO_PRIMARIO }}>{contacto.nombre || contacto.telefono}</span>
+        {onAbrirChat && telefonoChat && (
+          <button
+            onClick={() => onAbrirChat(telefonoCrudo)}
+            className="flex items-center gap-1.5 text-[12.5px] font-semibold rounded-lg px-3 py-1.5"
+            style={{ border: '1px solid #BFE9CF', backgroundColor: '#E7F8EE', color: '#128C4B' }}
+          >
+            <MessageCircle size={14} /> Abrir chat
+          </button>
+        )}
         <button
           onClick={() => actualizarCampo('etapa_id', etapas.find((e) => e.tipo === 'perdida')?.id || contacto.etapa_id || '')}
           className="text-[12.5px] font-semibold rounded-lg px-3 py-1.5"
@@ -257,6 +273,10 @@ export default function DetalleLead({ telefono: telefonoCrudo, onVolver }: Detal
         </div>
 
         <div className="flex-1 min-w-0 md:overflow-y-auto p-5 flex flex-col gap-4">
+          <Card titulo="Escribir por WhatsApp">
+            <FormWhatsapp telefono={telefonoChat || telefono} lineaSugerida={lineaSugerida} texto={mensajeWhatsapp} onTexto={setMensajeWhatsapp} />
+          </Card>
+
           <span className="text-[15px] font-bold" style={{ color: TEXTO_PRIMARIO }}>Historial completo</span>
           <div className="flex flex-col gap-4">
             {timeline.length === 0 && <div className="text-xs" style={{ color: TEXTO_TERCIARIO }}>Sin actividad registrada todavía.</div>}
@@ -348,9 +368,15 @@ export default function DetalleLead({ telefono: telefonoCrudo, onVolver }: Detal
             <Card titulo="Respuestas sugeridas">
               <div className="flex flex-col gap-1.5">
                 {respuestasRapidas.map((r) => (
-                  <div key={r.id} className="rounded-lg px-3 py-2 text-[12.5px] leading-snug" style={{ backgroundColor: 'var(--surface-2)', color: TEXTO_SECUNDARIO }}>
+                  <button
+                    key={r.id}
+                    onClick={() => setMensajeWhatsapp(r.contenido)}
+                    title="Usar en el mensaje de WhatsApp"
+                    className="rounded-lg px-3 py-2 text-[12.5px] leading-snug text-left"
+                    style={{ backgroundColor: 'var(--surface-2)', color: TEXTO_SECUNDARIO }}
+                  >
                     "{r.contenido}"
-                  </div>
+                  </button>
                 ))}
               </div>
             </Card>

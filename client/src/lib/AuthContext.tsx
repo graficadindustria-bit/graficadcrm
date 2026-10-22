@@ -69,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const fila = (data as Empresa) || null;
     setEmpresa(fila);
     aplicarColoresDeMarca(fila);
+    if (fila?.nombre) document.title = fila.nombre;
   };
 
   const cargarPerfil = async (sesionActual: Session | null) => {

@@ -1,5 +1,7 @@
 import { iniciarProgramadorDeMensajes } from './whatsapp/programados.js';
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import { env } from './config/env.js';
@@ -34,6 +36,28 @@ app.use(lineasRouter);
 app.use(usuariosRouter);
 app.use(empresasRouter);
 app.use(botRouter);
+
+// Para saber si el CRM arrancó bien: el despliegue la consulta después de
+// publicar una versión nueva y, si no responde, vuelve a la anterior.
+app.get('/salud', (_req, res) => {
+  res.json({ ok: true });
+});
+
+// Nombre y logo del negocio para la pantalla de entrada, antes de iniciar
+// sesión (con la sesión todavía no se puede leer la empresa por los permisos).
+app.get('/marca', async (_req, res) => {
+  const { data } = await supabase.from('empresas').select('nombre, logo_url').limit(1).maybeSingle();
+  res.json({ nombre: data?.nombre ?? null, logo_url: data?.logo_url ?? null });
+});
+
+// En el servidor, este mismo proceso sirve también la página ya compilada
+// (client/dist): todo queda en un solo dominio y no hace falta otro servidor.
+// En la compu (npm run dev) la página la sirve Vite y esta carpeta no existe.
+const carpetaCliente = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../client/dist');
+if (fs.existsSync(carpetaCliente)) {
+  app.use(express.static(carpetaCliente));
+  app.get('*', (_req, res) => res.sendFile(path.join(carpetaCliente, 'index.html')));
+}
 
 app.listen(env.port, () => {
   console.log(`API de envío escuchando en http://localhost:${env.port}`);

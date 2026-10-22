@@ -1,11 +1,11 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Check, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../lib/AuthContext';
 import { NAVY, BLUE, BORDE, BORDE_INPUT, TEXTO_PRIMARIO, TEXTO_SECUNDARIO, TEXTO_TERCIARIO, FOCO_INPUT } from '../../lib/tema';
 
 // Antes de entrar todavía no se puede leer la empresa (permisos), así que el
-// nombre sale del .env que escribe `npm run configurar`.
-const NOMBRE_NEGOCIO = import.meta.env.VITE_NOMBRE_NEGOCIO || 'Mi CRM';
+// nombre lo da el servidor (/marca). Mientras llega, el del .env.
+const NOMBRE_POR_DEFECTO = import.meta.env.VITE_NOMBRE_NEGOCIO || 'Mi CRM';
 
 const CARACTERISTICAS = [
   'Bandeja compartida por WhatsApp, sin duplicar chats',
@@ -21,6 +21,18 @@ export default function Login() {
   const [mantenerSesion, setMantenerSesion] = useState(true);
   const [error, setError] = useState('');
   const [enviando, setEnviando] = useState(false);
+  const [nombreNegocio, setNombreNegocio] = useState(NOMBRE_POR_DEFECTO);
+
+  useEffect(() => {
+    fetch(`${import.meta.env.VITE_BACKEND_URL ?? ''}/marca`)
+      .then((r) => r.json())
+      .then((marca: { nombre: string | null }) => {
+        if (!marca.nombre) return;
+        setNombreNegocio(marca.nombre);
+        document.title = marca.nombre;
+      })
+      .catch(() => { /* sin servidor: queda el nombre del .env */ });
+  }, []);
 
   const enviar = async (e: FormEvent) => {
     e.preventDefault();
@@ -46,10 +58,10 @@ export default function Login() {
               className="w-8 h-8 rounded-md flex items-center justify-center text-[15px] font-bold text-white"
               style={{ background: `linear-gradient(150deg, ${BLUE}, var(--accent))` }}
             >
-              {NOMBRE_NEGOCIO.charAt(0).toUpperCase()}
+              {nombreNegocio.charAt(0).toUpperCase()}
             </div>
             <div className="flex flex-col gap-px">
-              <span className="text-white text-[15px] font-bold tracking-wider">{NOMBRE_NEGOCIO}</span>
+              <span className="text-white text-[15px] font-bold tracking-wider">{nombreNegocio}</span>
               <span className="text-[11px] tracking-wider" style={{ color: '#7C93B5' }}>CRM DE VENTAS</span>
             </div>
           </div>
@@ -69,7 +81,7 @@ export default function Login() {
             </div>
           </div>
 
-          <span className="text-[11px]" style={{ color: '#5E769B' }}>{NOMBRE_NEGOCIO} · panel interno</span>
+          <span className="text-[11px]" style={{ color: '#5E769B' }}>{nombreNegocio} · panel interno</span>
         </div>
 
         <form onSubmit={enviar} className="flex-1 min-w-0 flex flex-col justify-center gap-5 p-7 md:p-10">

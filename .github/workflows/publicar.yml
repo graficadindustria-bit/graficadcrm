@@ -1,0 +1,90 @@
+# Publica tu CRM en internet cada vez que hacés `git push` a la rama main.
+#
+# GitHub compila todo acá (así el servidor no se satura) y le manda el
+# paquete listo al servidor. Si algo falla, tu CRM sigue con la versión anterior.
+#
+# Necesita 6 secretos en tu repo (Settings → Secrets and variables → Actions):
+#   DEPLOY_HOST, DEPLOY_USER, DEPLOY_KEY          → de la ficha que te da el profe
+#   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_KEY → de tu proyecto de Supabase
+name: Publicar CRM
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: publicar
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    # En el repo original del curso no se publica nada: solo en las copias (fork) de cada estudiante.
+    if: github.repository != 'fermopsi/saas-crm-whatsapp'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Revisar que estén los 6 secretos
+        id: secretos
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          faltan=""
+          for s in DEPLOY_HOST DEPLOY_USER DEPLOY_KEY SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY; do
+            [ -n "${!s}" ] || faltan="$faltan $s"
+          done
+          if [ -n "$faltan" ]; then
+            echo "::error::Faltan estos secretos en tu repo:$faltan (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Revisar el código (tipos)
+        run: npm run typecheck
+
+      - name: Compilar
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_BACKEND_URL: ''
+        run: npm run build
+
+      - name: Armar el paquete
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          # Solo las dependencias que necesita el servidor para funcionar.
+          npm ci --omit=dev --workspace server
+          printf 'SUPABASE_URL=%s\nSUPABASE_SERVICE_KEY=%s\n' "$SUPABASE_URL" "$SUPABASE_SERVICE_KEY" > .env
+          carpetas="server/dist server/package.json client/dist node_modules package.json .env"
+          [ -d server/node_modules ] && carpetas="$carpetas server/node_modules"
+          tar -czf paquete.tar.gz $carpetas
+          rm .env
+          du -h paquete.tar.gz
+
+      - name: Mandar al servidor y publicar
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/despliegue
+          chmod 600 ~/.ssh/despliegue
+          ssh -i ~/.ssh/despliegue -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
+            "$DEPLOY_USER@$DEPLOY_HOST" publicar < paquete.tar.gz

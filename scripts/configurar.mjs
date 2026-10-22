@@ -10,6 +10,17 @@ import { stdin, stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
 
+// Supabase necesita Node 22 o más nuevo. Con una versión vieja, más adelante
+// falla con un error difícil de entender ("native WebSocket not found").
+const versionNode = Number(process.versions.node.split('.')[0]);
+if (versionNode < 22) {
+  console.log(`\n\x1b[31m✗ Tenés Node ${process.versions.node} y el CRM necesita Node 22 o más nuevo.\x1b[0m`);
+  console.log('  1. Instalá la versión LTS desde https://nodejs.org');
+  console.log('  2. Cerrá PowerShell y abrilo de nuevo (node -v tiene que decir v22 o más).');
+  console.log('  3. Borrá la carpeta node_modules y corré npm install otra vez.\n');
+  process.exit(1);
+}
+
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const archivoEnv = path.join(raiz, '.env');
 const rl = readline.createInterface({ input: stdin, output: stdout });

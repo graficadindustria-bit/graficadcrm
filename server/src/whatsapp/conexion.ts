@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, useMultiFileAuthState } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, proto } from '@whiskeysockets/baileys';
 import type { WASocket } from '@whiskeysockets/baileys';
 import type { Boom } from '@hapi/boom';
 import qrcode from 'qrcode';
@@ -8,6 +8,7 @@ import { procesarMensajeEntrante, procesarMensajeSaliente } from './mensajes-ent
 import { programarLimpiezaDeEtiquetasHuerfanas, registrarEventosDeEtiquetas } from './etiquetas.js';
 import { registrarSeguimientoDeEntrega } from './entrega.js';
 import { fueEnviadoPorCRM } from './mensajes-enviados-por-crm.js';
+import { useAuthStateSeguro } from './auth-state.js';
 
 // Cuántas veces seguidas se reintentó reconectar cada línea sin éxito. Con
 // esto evitamos un loop infinito cuando el problema es persistente (ej. un
@@ -19,15 +20,52 @@ const MAX_INTENTOS_RECONEXION = 5;
 const ESPERA_BASE_MS = 3000;
 const ESPERA_MAXIMA_MS = 60000;
 
+// El CRM no usa el historial de chats que WhatsApp manda al vincular (no
+// escuchamos messaging-history.set), pero Baileys igual lo descarga, lo
+// descomprime y lo retiene en memoria hasta procesarlo. Con syncFullHistory
+// en true (el default de Baileys 7) WhatsApp manda TODO el historial de la
+// cuenta: al vincular una cuenta grande (línea 414ec4b5, 2026-10-19) el heap
+// pasó los 2 GB y el proceso murió con todas las líneas. Pedimos solo la
+// sincronización mínima y descartamos los tipos pesados. No se desactiva
+// todo: INITIAL_BOOTSTRAP/RECENT/PUSH_NAME traen los mapeos @lid <-> número
+// (sin ellos Baileys avisa que la sesión se vuelve inestable) y el paso de
+// RECENT es el que dispara la sincronización inicial de etiquetas.
+const TIPOS_DE_HISTORIAL_DESCARTADOS = new Set<number>([
+  proto.HistorySync.HistorySyncType.FULL,
+  proto.HistorySync.HistorySyncType.ON_DEMAND,
+  proto.HistorySync.HistorySyncType.INITIAL_STATUS_V3,
+]);
+
+// Cierra el socket anterior de la línea (si había) antes de abrir uno nuevo.
+// Sin esto, "Ver QR" o una reconexión dejaban vivo el socket viejo con todos
+// sus listeners, timers y buffers: dos sockets sobre las mismas credenciales
+// y memoria que nunca se liberaba. Primero se sacan los listeners para que su
+// propio 'close' no dispare otra reconexión.
+function cerrarSocket(sock: WASocket | undefined): void {
+  if (!sock) return;
+  (sock.ev as unknown as { removeAllListeners: () => void }).removeAllListeners();
+  try {
+    sock.end(undefined);
+  } catch {
+    // ya estaba cerrado
+  }
+}
+
 export async function iniciarConexion(lineaId: string): Promise<WASocket> {
-  const { state, saveCreds } = await useMultiFileAuthState(carpetaAuth(lineaId));
+  const { state, saveCreds } = await useAuthStateSeguro(carpetaAuth(lineaId));
   // La versión de WhatsApp Web que trae Baileys por defecto se queda vieja y
   // WhatsApp empieza a rechazar el vínculo ("No se pudo conectar") aunque el
   // QR escanee bien. Pedimos la vigente; si falla la consulta usamos la default.
   const version = await fetchLatestBaileysVersion()
     .then((r) => r.version)
     .catch(() => undefined);
-  const sock = makeWASocket({ auth: state, printQRInTerminal: false, ...(version ? { version } : {}) });
+  cerrarSocket(obtenerSesion(lineaId)?.sock);
+  const sock = makeWASocket({
+    auth: state,
+    ...(version ? { version } : {}),
+    syncFullHistory: false,
+    shouldSyncHistoryMessage: ({ syncType }) => !TIPOS_DE_HISTORIAL_DESCARTADOS.has(syncType ?? -1),
+  });
 
   guardarSesion(lineaId, { sock, estado: 'conectando', qrDataUrl: null });
 
@@ -41,10 +79,12 @@ export async function iniciarConexion(lineaId: string): Promise<WASocket> {
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
     const sesionActual = obtenerSesion(lineaId);
+    // Un socket que ya fue reemplazado por otro no toca más la sesión.
+    if (sesionActual && sesionActual.sock !== sock) return;
 
     if (qr) {
       const qrDataUrl = await qrcode.toDataURL(qr);
-      guardarSesion(lineaId, { ...sesionActual, sock, qrDataUrl, estado: 'conectando' });
+      guardarSesion(lineaId, { sock, qrDataUrl, estado: 'conectando' });
       await actualizarEstadoLinea(lineaId, 'conectando');
     }
 
@@ -69,6 +109,7 @@ export async function iniciarConexion(lineaId: string): Promise<WASocket> {
         if (intentos > MAX_INTENTOS_RECONEXION) {
           console.error(`[${lineaId}] ${intentos} intentos de reconexión seguidos sin éxito — dejo de reintentar para no crashear el proceso. Reconectá manualmente desde Conexiones.`);
           intentosReconexion.delete(lineaId);
+          cerrarSocket(sock);
           borrarSesion(lineaId);
           await actualizarEstadoLinea(lineaId, 'desconectado');
         } else {
@@ -82,6 +123,7 @@ export async function iniciarConexion(lineaId: string): Promise<WASocket> {
         }
       } else {
         intentosReconexion.delete(lineaId);
+        cerrarSocket(sock);
         borrarSesion(lineaId);
         await actualizarEstadoLinea(lineaId, 'desconectado');
         // Solo un cierre de sesión real (el usuario desvinculó el dispositivo)
@@ -103,9 +145,10 @@ export async function iniciarConexion(lineaId: string): Promise<WASocket> {
     if (type !== 'notify') return;
     for (const msg of messages) {
       const jid = msg.key.remoteJid;
-      // Ignoramos grupos y estados, pero aceptamos tanto @s.whatsapp.net (número real)
-      // como @lid (el identificador anónimo que WhatsApp usa cada vez más seguido).
-      if (!jid || jid === 'status@broadcast' || jid.endsWith('@g.us') || jid.endsWith('@broadcast')) continue;
+      // Solo entran chats uno a uno: @s.whatsapp.net (número real) o @lid (el
+      // identificador anónimo que WhatsApp usa cada vez más seguido). Así quedan
+      // afuera grupos (@g.us), estados y listas (@broadcast) y canales (@newsletter).
+      if (!jid || !(jid.endsWith('@s.whatsapp.net') || jid.endsWith('@lid'))) continue;
       if (msg.key.fromMe) {
         // Si lo mandó el CRM (routes/enviar.ts), ya está guardado con su
         // whatsapp_id; lo ignoramos acá para no duplicarlo. Si no, es un
