@@ -41,8 +41,30 @@ export interface Tarifas {
   // Línea de WhatsApp desde la que salen las cotizaciones (la corporativa).
   // Vacía: sale por la línea del chat del cliente.
   lineaCotizaciones?: string | null;
+  // Datos del PDF de la cotización (cabecera y pie).
+  pdf?: Partial<DatosPdf>;
   materiales: Material[];
 }
+
+export interface DatosPdf {
+  frase: string;
+  autorFrase: string;
+  email: string;
+  telefonos: string;
+  direccion: string;
+  terminos: string;
+}
+
+export const PDF_POR_DEFECTO: DatosPdf = {
+  frase: '"La persistencia es el camino del éxito."',
+  autorFrase: 'Charles Chaplin.',
+  email: 'graficad@gmail.com',
+  telefonos: '(+591) 71020800 - 78794833',
+  direccion: 'AV. ROCA Y CORONADO No. 225',
+  terminos: 'El trabajo incluye la provisión de material y armado. Tiempo de entrega a coordinar.',
+};
+
+export const datosPdf = (t: Tarifas): DatosPdf => ({ ...PDF_POR_DEFECTO, ...t.pdf });
 
 export interface ItemCotizacion {
   id: string;
@@ -56,6 +78,8 @@ export interface ItemCotizacion {
   minutosRdworks: number | null;
   grabadoMin: number;
   piezas: number;
+  /** Imagen de referencia que va en el PDF para el cliente. */
+  imagen?: string | null;
 }
 
 export interface DatosCotizacion {
@@ -66,6 +90,8 @@ export interface DatosCotizacion {
   otros: number;
   conFactura: boolean;
   notas: string;
+  /** Términos y condiciones del PDF. Vacío: los de "Catálogo y tarifas". */
+  terminos?: string;
 }
 
 export const LAMINAS: Record<Lamina, { nombre: string; medida: string }> = {

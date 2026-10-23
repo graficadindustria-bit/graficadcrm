@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Calculator, Check, Copy, MessageSquare, Plus, Send, Trash2, X } from 'lucide-react';
+import { Calculator, Check, Copy, FileDown, ImagePlus, MessageSquare, Plus, Send, Trash2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../lib/AuthContext';
 import { useEtapasVenta } from '../bandeja/hooks/useEtapasVenta';
@@ -7,10 +7,11 @@ import { AMBER, TEXTO_PRIMARIO, TEXTO_SECUNDARIO, TEXTO_TERCIARIO } from '../../
 import { Boton, Chip, EncabezadoPagina, EstadoVacio, Tarjeta, useToast } from '../../components/ui';
 import type { Conversacion } from '../../lib/tipos';
 import {
-  LAMINAS, calcularCotizacion, datosNuevos, formatoBs, formatoNumero, itemNuevo, nombreMaterial, numeroCotizacion,
+  LAMINAS, calcularCotizacion, datosNuevos, datosPdf, formatoBs, formatoNumero, itemNuevo, nombreMaterial, numeroCotizacion,
   textoOrdenCorte, textoParaCliente, type DatosCotizacion, type ItemCotizacion, type Lamina, type Tarifas,
 } from './tarifas';
 import { faltaInstalar, useTarifas } from './useTarifas';
+import { nombreArchivoPdf, pdfCotizacion } from './pdfCotizacion';
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL;
 
@@ -94,6 +95,8 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
   const [cliente, setCliente] = useState(conversacionInicial?.contacto_nombre || '');
   const [datos, setDatos] = useState<DatosCotizacion>(() => datosNuevos(tarifas));
   const [ocupado, setOcupado] = useState(false);
+  const [enPdf, setEnPdf] = useState(true);
+  const [subiendoImagen, setSubiendoImagen] = useState<string | null>(null);
   const [lineas, setLineas] = useState<{ id: string; nombre: string; numero: string | null; estado: string }[]>([]);
   const [lineaEnvio, setLineaEnvio] = useState('');
 
@@ -139,6 +142,25 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
 
   const cambiarItem = (id: string, cambios: Partial<ItemCotizacion>) =>
     setDatos((d) => ({ ...d, items: d.items.map((i) => (i.id === id ? { ...i, ...cambios } : i)) }));
+
+  // Imagen de referencia del ítem: va al bucket `media` y su URL queda en el ítem.
+  const subirImagen = async (itemId: string, archivo: File) => {
+    if (!usuario) return;
+    setSubiendoImagen(itemId);
+    const ext = archivo.name.split('.').pop() || 'jpg';
+    const ruta = `cotizaciones/${usuario.empresa_id}/${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage.from('media').upload(ruta, archivo);
+    setSubiendoImagen(null);
+    if (error) return toast('No se pudo subir la imagen.', 'error');
+    cambiarItem(itemId, { imagen: supabase.storage.from('media').getPublicUrl(ruta).data.publicUrl });
+  };
+
+  const armarPdf = (num: string) => pdfCotizacion({ numero: num, cliente: nombreCliente, datos, tarifas });
+
+  const descargarPdf = async () => {
+    const doc = await armarPdf(numero);
+    doc.save(nombreArchivoPdf(numero, nombreCliente));
+  };
 
   const nueva = () => {
     setEditando(null);
@@ -234,17 +256,30 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
     try {
       const guardada = await guardar();
       if (!guardada) return;
-      const texto = textoParaCliente(numeroCotizacion(guardada.numero), nombreCliente, datos, tarifas);
-      const resp = await fetch(`${backendUrl}/enviar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ telefono: conversacion.contacto_telefono, tipo: 'texto', texto, agente_id: usuario!.id, linea_id: lineaEnvio || conversacion.linea_id }),
-      });
-      if (!resp.ok) {
-        const cuerpo = await resp.json().catch(() => ({}));
-        toast(cuerpo.error || 'No se pudo enviar por WhatsApp.', 'error');
-        return;
-      }
+      const num = numeroCotizacion(guardada.numero);
+      const mandar = async (cuerpo: Record<string, string>) => {
+        const resp = await fetch(`${backendUrl}/enviar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ telefono: conversacion.contacto_telefono, agente_id: usuario!.id, linea_id: lineaEnvio || conversacion.linea_id, ...cuerpo }),
+        });
+        if (resp.ok) return true;
+        const error = await resp.json().catch(() => ({}));
+        toast(error.error || 'No se pudo enviar por WhatsApp.', 'error');
+        return false;
+      };
+      if (enPdf) {
+        // El PDF se sube a `media` y se manda como documento, después de un
+        // mensaje corto que lo presenta.
+        const blob = (await armarPdf(num)).output('blob');
+        const ruta = `cotizaciones/${usuario!.empresa_id}/${num}-${Date.now()}.pdf`;
+        const { error } = await supabase.storage.from('media').upload(ruta, blob, { contentType: 'application/pdf' });
+        if (error) return toast('No se pudo preparar el PDF.', 'error');
+        const url = supabase.storage.from('media').getPublicUrl(ruta).data.publicUrl;
+        const saludo = `Hola ${nombreCliente}, te enviamos la cotización ${num} de Graficad por ${formatoBs(calculo.total)}. Cualquier consulta, estamos a tu disposición.`;
+        if (!(await mandar({ tipo: 'texto', texto: saludo }))) return;
+        if (!(await mandar({ tipo: 'pdf', media_url: url, texto: nombreArchivoPdf(num, nombreCliente) }))) return;
+      } else if (!(await mandar({ tipo: 'texto', texto: textoParaCliente(num, nombreCliente, datos, tarifas) }))) return;
       await supabase.from('conversaciones').update({ ultima_actividad: new Date().toISOString() }).eq('id', conversacion.id);
       await supabase.from('graficad_cotizaciones').update({ estado: 'enviada' }).eq('id', guardada.id);
       setEditando({ ...guardada, estado: 'enviada' });
@@ -338,7 +373,16 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
                 </div>
                 <div>
                   <label htmlFor={`d-${item.id}`} className={etiqueta} style={{ color: TEXTO_SECUNDARIO }}>Qué es (lo ve el cliente)</label>
-                  <input id={`d-${item.id}`} value={item.descripcion} onChange={(e) => cambiarItem(item.id, { descripcion: e.target.value })} placeholder='Ej. Letras "AROMA" de 1,20 × 0,40 m' className={campo} style={campoStyle} />
+                  <textarea id={`d-${item.id}`} value={item.descripcion} onChange={(e) => cambiarItem(item.id, { descripcion: e.target.value })} rows={2} placeholder='Ej. Letras "AROMA" de 1,20 × 0,40 m en acrílico blanco, con instalación' className={campo} style={{ ...campoStyle, resize: 'vertical' }} />
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {item.imagen && <img src={item.imagen} alt="Imagen de referencia" className="rounded-md object-cover" style={{ width: 72, height: 54, border: '1px solid var(--line)' }} />}
+                  <label className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold cursor-pointer rounded-lg px-2.5 py-1.5" style={{ border: '1px solid var(--line-2)', color: TEXTO_SECUNDARIO }}>
+                    <ImagePlus size={14} />
+                    {subiendoImagen === item.id ? 'Subiendo…' : item.imagen ? 'Cambiar imagen' : 'Imagen de referencia (va en el PDF)'}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) subirImagen(item.id, f); e.target.value = ''; }} />
+                  </label>
+                  {item.imagen && <button onClick={() => cambiarItem(item.id, { imagen: null })} className="text-[12px]" style={{ color: TEXTO_TERCIARIO }}>Quitar</button>}
                 </div>
                 <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
                   <div className="min-w-0">
@@ -400,6 +444,10 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
               Con factura (+{tarifas.factura} %)
             </label>
             <div>
+              <label htmlFor="x-terminos" className={etiqueta} style={{ color: TEXTO_SECUNDARIO }}>Términos y condiciones (van en el PDF)</label>
+              <textarea id="x-terminos" value={datos.terminos ?? ''} onChange={(e) => setDatos((d) => ({ ...d, terminos: e.target.value }))} rows={2} placeholder={datosPdf(tarifas).terminos} className={campo} style={{ ...campoStyle, resize: 'vertical' }} />
+            </div>
+            <div>
               <label htmlFor="x-notas" className={etiqueta} style={{ color: TEXTO_SECUNDARIO }}>Notas para el taller (no las ve el cliente)</label>
               <textarea id="x-notas" value={datos.notas} onChange={(e) => setDatos((d) => ({ ...d, notas: e.target.value }))} rows={2} placeholder="Archivo, fecha de entrega, detalles de armado…" className={campo} style={{ ...campoStyle, resize: 'vertical' }} />
             </div>
@@ -450,11 +498,16 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
                   </select>
                 </div>
               )}
+              <label className="flex items-center gap-2 text-[13px] font-semibold mt-3" style={{ color: TEXTO_PRIMARIO }}>
+                <input type="checkbox" checked={enPdf} onChange={(e) => setEnPdf(e.target.checked)} style={{ width: 15, height: 15, accentColor: 'var(--accent)' }} />
+                Enviar en PDF con el formato de Graficad
+              </label>
               <div className="flex gap-2 flex-wrap mt-3">
                 <Boton variante="primario" icono={Send} disabled={!conversacion || ocupado || sinInstalar} onClick={enviar} title={!conversacion ? 'Elegí el chat del cliente arriba' : undefined}>
                   {editando?.estado === 'enviada' ? 'Reenviar al chat' : 'Enviar al chat'}
                 </Boton>
                 <Boton variante="secundario" disabled={ocupado || sinInstalar} onClick={async () => { if (await guardar()) toast('Cotización guardada', 'ok'); }}>Guardar</Boton>
+                <Boton variante="fantasma" icono={FileDown} onClick={descargarPdf}>Descargar PDF</Boton>
                 <Boton variante="fantasma" icono={Copy} onClick={() => copiar(textoParaCliente(numero, nombreCliente, datos, tarifas), toast, 'Cotización')}>Copiar</Boton>
               </div>
               {!conversacion && <p className="text-[12px] mt-2" style={{ color: TEXTO_TERCIARIO }}>Para enviarla, elegí el chat del cliente o abrí el cotizador con el botón "Cotizar" del chat.</p>}
