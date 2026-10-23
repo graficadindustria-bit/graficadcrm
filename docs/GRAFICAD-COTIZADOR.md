@@ -29,6 +29,10 @@ Sin el paso 1, el cotizador igual calcula y copia, pero no guarda ni envía.
 
 Se suman la lámina (lista de precios de la web), diseño, armado, instalación y otros. CNC router resta 5 % al corte y con factura se agrega 16 %.
 
+## Desde qué número sale
+
+En **Catálogo y tarifas → Enviar cotizaciones desde** se elige la línea corporativa. Si no se elige ninguna, la cotización sale por la línea donde escribió el cliente. En el cotizador, **Enviar desde** permite cambiarla para una cotización puntual.
+
 ## Qué hace con el embudo
 
 - Al **enviar** la cotización, el contacto pasa a la etapa que tenga "negoci" en el nombre (En Negociación) y se crea una oportunidad "COT-0001 · Cliente" con el monto. Si se reenvía, se actualiza esa misma oportunidad.
