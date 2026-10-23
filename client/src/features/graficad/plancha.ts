@@ -1,4 +1,4 @@
-import type { ItemCotizacion, Lamina } from './tarifas';
+import { precioLamina, type ItemCotizacion, type Lamina, type Material, type Tarifas } from './tarifas';
 
 // Acomodo de piezas rectangulares en láminas (nesting) para la vista previa
 // de la plancha. Algoritmo MaxRects con "mejor lado corto" y rotación de 90°:
@@ -132,4 +132,29 @@ export function acomodarPiezas(piezas: PiezaCorte[], hoja: { w: number; h: numbe
     aprovechamiento: areaHojas ? Math.min(1, usada / areaHojas) : 0,
     perimetroM: Math.round(perimetro) / 100,
   };
+}
+
+export interface Recomendacion {
+  lamina: Exclude<Lamina, 'ninguna'>;
+  laminas: number;
+  costo: number;
+  aprovechamiento: number;
+}
+
+/**
+ * Prueba las piezas en cuarta, media y entera y se queda con la opción que
+ * sale más barata en material (a igual precio, la que menos desperdicia).
+ * Sin precio de lámina compara por superficie.
+ */
+export function recomendarLamina(piezas: PiezaCorte[], material: Material | undefined, t: Tarifas): Recomendacion | null {
+  let mejor: Recomendacion | null = null;
+  for (const lamina of ['cuarta', 'media', 'entera'] as const) {
+    const hoja = MEDIDAS_HOJA[lamina];
+    const r = acomodarPiezas(piezas, hoja, t.separacionCorte);
+    if (r.noEntran || !r.planchas.length) continue;
+    const precio = material && material.entera !== null ? precioLamina(material, lamina, t) : hoja.w * hoja.h;
+    const opcion = { lamina, laminas: r.planchas.length, costo: precio * r.planchas.length, aprovechamiento: r.aprovechamiento };
+    if (!mejor || opcion.costo < mejor.costo - 0.005 || (Math.abs(opcion.costo - mejor.costo) <= 0.005 && opcion.aprovechamiento > mejor.aprovechamiento)) mejor = opcion;
+  }
+  return mejor;
 }

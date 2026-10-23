@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Calculator, Check, Copy, FileDown, ImagePlus, MessageSquare, Plus, Send, Trash2, X } from 'lucide-react';
+import { Calculator, Check, Copy, FileDown, FileUp, ImagePlus, MessageSquare, Plus, Send, Trash2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../lib/AuthContext';
 import { useEtapasVenta } from '../bandeja/hooks/useEtapasVenta';
@@ -8,11 +8,12 @@ import { Boton, Chip, EncabezadoPagina, EstadoVacio, Tarjeta, useToast } from '.
 import type { Conversacion } from '../../lib/tipos';
 import {
   LAMINAS, calcularCotizacion, datosNuevos, datosPdf, formatoBs, formatoNumero, itemNuevo, nombreMaterial, numeroCotizacion,
-  textoOrdenCorte, textoParaCliente, type DatosCotizacion, type ItemCotizacion, type Lamina, type Tarifas,
+  escalaArchivo, metrosArchivo, piezasArchivo, textoOrdenCorte, textoParaCliente, type ArchivoCorte, type DatosCotizacion, type ItemCotizacion, type Lamina, type Tarifas,
 } from './tarifas';
 import { faltaInstalar, useTarifas } from './useTarifas';
 import { nombreArchivoPdf, pdfCotizacion } from './pdfCotizacion';
-import { MEDIDAS_HOJA, acomodarPiezas } from './plancha';
+import { MEDIDAS_HOJA, acomodarPiezas, recomendarLamina } from './plancha';
+import { EXTENSIONES_CORTE, NOMBRE_UNIDAD, leerArchivoCorte } from './archivoCorte';
 import VistaPlancha from './VistaPlancha';
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL;
@@ -99,6 +100,7 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
   const [ocupado, setOcupado] = useState(false);
   const [enPdf, setEnPdf] = useState(true);
   const [subiendoImagen, setSubiendoImagen] = useState<string | null>(null);
+  const [leyendoArchivo, setLeyendoArchivo] = useState<string | null>(null);
   const [lineas, setLineas] = useState<{ id: string; nombre: string; numero: string | null; estado: string }[]>([]);
   const [lineaEnvio, setLineaEnvio] = useState('');
 
@@ -155,6 +157,34 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
     setSubiendoImagen(null);
     if (error) return toast('No se pudo subir la imagen.', 'error');
     cambiarItem(itemId, { imagen: supabase.storage.from('media').getPublicUrl(ruta).data.publicUrl });
+  };
+
+  // Archivo de corte: de sus medidas salen las piezas, los metros de corte,
+  // los minutos estimados y la lámina más barata donde entran las piezas.
+  const cambiosArchivo = (item: ItemCotizacion, archivo: ArchivoCorte): Partial<ItemCotizacion> => {
+    const cortes = piezasArchivo(archivo);
+    const material = tarifas.materiales.find((x) => x.id === item.materialId);
+    const rec = item.lamina !== 'ninguna' ? recomendarLamina(cortes, material, tarifas) : null;
+    return { archivo, cortes, metros: metrosArchivo(archivo), minutosRdworks: null, ...(rec ? { lamina: rec.lamina, laminas: rec.laminas } : {}) };
+  };
+
+  const cargarArchivo = async (itemId: string, archivo: File) => {
+    if (!usuario) return;
+    setLeyendoArchivo(itemId);
+    try {
+      const leido = await leerArchivoCorte(archivo);
+      const ext = archivo.name.split('.').pop()?.toLowerCase() || 'dxf';
+      const ruta = `cotizaciones/${usuario.empresa_id}/archivos/${crypto.randomUUID()}.${ext}`;
+      const { error } = await supabase.storage.from('media').upload(ruta, archivo, { contentType: 'application/octet-stream' });
+      if (error) toast('Se leyó el archivo, pero no se pudo guardar para el taller.', 'error');
+      const info: ArchivoCorte = { ...leido, url: error ? null : supabase.storage.from('media').getPublicUrl(ruta).data.publicUrl };
+      const item = datos.items.find((i) => i.id === itemId);
+      if (item) cambiarItem(itemId, cambiosArchivo(item, info));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'No se pudo leer el archivo.', 'error');
+    } finally {
+      setLeyendoArchivo(null);
+    }
   };
 
   const armarPdf = (num: string) => pdfCotizacion({ numero: num, cliente: nombreCliente, datos, tarifas });
@@ -386,6 +416,17 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
                   </label>
                   {item.imagen && <button onClick={() => cambiarItem(item.id, { imagen: null })} className="text-[12px]" style={{ color: TEXTO_TERCIARIO }}>Quitar</button>}
                 </div>
+                <ArchivoDeCorte
+                  item={item}
+                  leyendo={leyendoArchivo === item.id}
+                  minutos={ci?.minutos ?? null}
+                  velocidad={m?.corte === 'minuto' ? m.velocidad || 10 : null}
+                  recomendacion={item.archivo && item.lamina !== 'ninguna' ? recomendarLamina(item.cortes || [], m, tarifas) : null}
+                  onSubir={(f) => cargarArchivo(item.id, f)}
+                  onUnidad={(unidad) => item.archivo && cambiarItem(item.id, cambiosArchivo(item, { ...item.archivo, unidad }))}
+                  onQuitar={() => cambiarItem(item.id, { archivo: null })}
+                  onCambiar={(cambios) => cambiarItem(item.id, cambios)}
+                />
                 <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
                   <div className="min-w-0">
                     <label htmlFor={`m-${item.id}`} className={etiqueta} style={{ color: TEXTO_SECUNDARIO }}>Material</label>
@@ -531,7 +572,7 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
                   ['Lámina', item.lamina === 'ninguna' ? 'Del cliente' : `${formatoNumero(item.laminas, 0)} × ${LAMINAS[item.lamina].nombre.toLowerCase()}`],
                   ['Máquina', item.maquina === 'laser' ? 'Láser' : 'CNC router'],
                   ['Corte', `${formatoNumero(item.metros, 1)} m`],
-                  ...(ci.minutos !== null ? [['Tiempo', `${formatoNumero(ci.minutos, 1)} min${item.minutosRdworks !== null ? ' (RDWorks)' : ''}`] as [string, string]] : []),
+                  ...(ci.minutos !== null ? [['Tiempo', `${formatoNumero(ci.minutos, 1)} min${item.minutosRdworks !== null ? ' (RDWorks)' : item.archivo && Math.abs(item.metros - metrosArchivo(item.archivo)) < 0.01 ? ' (archivo)' : ''}`] as [string, string]] : []),
                   ...(item.grabadoMin ? [['Grabado', `${item.grabadoMin} min`] as [string, string]] : []),
                   ['Piezas', String(item.piezas)],
                 ];
@@ -546,6 +587,11 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
                         </div>
                       ))}
                     </div>
+                    {item.archivo?.url && (
+                      <a href={item.archivo.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 mt-2 text-[12.5px] font-semibold underline" style={{ color: TEXTO_PRIMARIO }}>
+                        <FileDown size={14} /> Descargar archivo de corte · {item.archivo.nombre}
+                      </a>
+                    )}
                     {(item.imagen || item.cortes?.length) ? (
                       <div className="mt-2 flex gap-3 flex-wrap items-start">
                         {item.imagen && (
@@ -607,6 +653,62 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
         )}
       </div>
       </div>
+    </div>
+  );
+}
+
+// Botón para subir el archivo de corte y el resumen de lo que se leyó.
+function ArchivoDeCorte({ item, leyendo, minutos, velocidad, recomendacion, onSubir, onUnidad, onQuitar, onCambiar }: {
+  item: ItemCotizacion;
+  leyendo: boolean;
+  minutos: number | null;
+  velocidad: number | null;
+  recomendacion: ReturnType<typeof recomendarLamina>;
+  onSubir: (f: File) => void;
+  onUnidad: (u: ArchivoCorte['unidad']) => void;
+  onQuitar: () => void;
+  onCambiar: (cambios: Partial<ItemCotizacion>) => void;
+}) {
+  const a = item.archivo;
+  const k = a ? escalaArchivo(a) / 10 : 0;
+  const ancho = a ? a.anchoMm * k : 0;
+  const alto = a ? a.altoMm * k : 0;
+  const rara = a && (Math.max(ancho, alto) > 400 || Math.max(ancho, alto) < 1);
+  const usaArchivo = a && Math.abs(item.metros - metrosArchivo(a)) < 0.01;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold cursor-pointer rounded-lg px-2.5 py-1.5" style={{ border: '1px solid var(--line-2)', color: TEXTO_SECUNDARIO }}>
+          <FileUp size={14} />
+          {leyendo ? 'Leyendo archivo…' : a ? 'Cambiar archivo de corte' : 'Archivo de corte (DXF, SVG o PLT)'}
+          <input type="file" accept={EXTENSIONES_CORTE} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onSubir(f); e.target.value = ''; }} />
+        </label>
+        {a && (a.url ? <a href={a.url} target="_blank" rel="noreferrer" className="text-[12.5px] font-semibold underline" style={{ color: TEXTO_PRIMARIO }}>{a.nombre}</a> : <span className="text-[12.5px] font-semibold" style={{ color: TEXTO_PRIMARIO }}>{a.nombre}</span>)}
+        {a && <button onClick={onQuitar} className="text-[12px]" style={{ color: TEXTO_TERCIARIO }}>Quitar</button>}
+      </div>
+      {a && (
+        <div className="rounded-lg px-3 py-2 text-[12.5px] flex flex-col gap-1.5" style={{ backgroundColor: 'var(--surface-2)', color: TEXTO_SECUNDARIO }}>
+          <div className="tabular-nums">
+            Diseño de <b style={{ color: TEXTO_PRIMARIO }}>{formatoNumero(ancho, 1)} × {formatoNumero(alto, 1)} cm</b> · {a.contornos} figura{a.contornos === 1 ? '' : 's'} · <b style={{ color: TEXTO_PRIMARIO }}>{formatoNumero(metrosArchivo(a), 2)} m</b> de corte
+            {velocidad !== null && minutos !== null && usaArchivo && item.minutosRdworks === null && <> · <b style={{ color: TEXTO_PRIMARIO }}>≈ {formatoNumero(minutos, 1)} min</b> a {velocidad} mm/s</>}
+          </div>
+          <label className="flex items-center gap-2 flex-wrap">
+            <span>El archivo está en</span>
+            <select value={a.unidad} onChange={(e) => onUnidad(e.target.value as ArchivoCorte['unidad'])} className="rounded-md px-1.5 py-0.5 text-[12.5px]" style={{ border: '1px solid var(--line-2)', backgroundColor: 'var(--surface)', color: TEXTO_PRIMARIO }}>
+              {(Object.keys(NOMBRE_UNIDAD) as ArchivoCorte['unidad'][]).map((u) => <option key={u} value={u}>{NOMBRE_UNIDAD[u]}</option>)}
+            </select>
+            {rara && <span style={{ color: AMBER }}>La medida parece rara: revisá la unidad.</span>}
+          </label>
+          {recomendacion && (recomendacion.lamina !== item.lamina || recomendacion.laminas !== item.laminas) && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span>Lo más conveniente: <b style={{ color: TEXTO_PRIMARIO }}>{recomendacion.laminas} × {LAMINAS[recomendacion.lamina].nombre.toLowerCase()}</b></span>
+              <Boton tamano="sm" variante="secundario" onClick={() => onCambiar({ lamina: recomendacion.lamina, laminas: recomendacion.laminas })}>Usar</Boton>
+            </div>
+          )}
+          {!usaArchivo && <span>Cambiaste los metros a mano: el tiempo se estima con esos metros.</span>}
+          {velocidad !== null && <span style={{ color: TEXTO_TERCIARIO }}>Los minutos son una estimación del archivo (corte + traslados). Si RDWorks da otro número, escribilo en «Minutos RDWorks».</span>}
+        </div>
+      )}
     </div>
   );
 }
