@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { supabase } from '../../lib/supabaseClient';
 import { Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { AMBER, TEXTO_PRIMARIO, TEXTO_SECUNDARIO, TEXTO_TERCIARIO } from '../../lib/tema';
 import { Boton, EncabezadoPagina, Tarjeta, useToast } from '../../components/ui';
@@ -14,7 +15,7 @@ const MODO: Record<ModoCorte, string> = {
   metro: 'Bs por metro fijo',
 };
 
-const GENERALES: { k: keyof Omit<Tarifas, 'materiales'>; label: string; unidad: string }[] = [
+const GENERALES: { k: keyof Omit<Tarifas, 'materiales' | 'lineaCotizaciones'>; label: string; unidad: string }[] = [
   { k: 'laserMinuto', label: 'Láser en acrílico, PET y PAI', unidad: 'Bs por minuto' },
   { k: 'grabadoMinuto', label: 'Grabado relleno', unidad: 'Bs por minuto' },
   { k: 'descuentoRouter', label: 'Descuento en CNC router', unidad: '% sobre el corte' },
@@ -33,6 +34,11 @@ export default function CatalogoTarifas() {
   const { tarifas, guardadas, sinInstalar, cargando, guardar } = useTarifas();
   const [borrador, setBorrador] = useState<Tarifas>(tarifas);
   const [guardando, setGuardando] = useState(false);
+  const [lineas, setLineas] = useState<{ id: string; nombre: string; numero: string | null }[]>([]);
+
+  useEffect(() => {
+    supabase.from('lineas_whatsapp').select('id, nombre, numero').order('nombre').then(({ data }) => setLineas(data || []));
+  }, []);
 
   useEffect(() => { setBorrador(tarifas); }, [tarifas]);
 
@@ -82,6 +88,14 @@ export default function CatalogoTarifas() {
               <input id={`g-${k}`} type="number" min={0} step={k === 'factorMedia' ? 0.01 : 0.5} value={borrador[k]} onChange={(e) => setBorrador((b) => ({ ...b, [k]: num(e.target.value) ?? 0 }))} className={celda} style={celdaStyle} />
             </div>
           ))}
+          <div className="min-w-0">
+            <label htmlFor="g-linea" className="block text-[12px] font-semibold" style={{ color: TEXTO_PRIMARIO }}>Enviar cotizaciones desde</label>
+            <span className="block text-[11.5px] mb-1" style={{ color: TEXTO_TERCIARIO }}>línea de WhatsApp</span>
+            <select id="g-linea" value={borrador.lineaCotizaciones || ''} onChange={(e) => setBorrador((b) => ({ ...b, lineaCotizaciones: e.target.value || null }))} className={celda} style={celdaStyle}>
+              <option value="">La del chat del cliente</option>
+              {lineas.map((l) => <option key={l.id} value={l.id}>{l.nombre}{l.numero ? ` · ${l.numero}` : ''}</option>)}
+            </select>
+          </div>
         </div>
         <p className="text-[12px] mt-3" style={{ color: TEXTO_TERCIARIO }}>Foam, MDF y melamina se cobran a 1 Bs por metro de corte por cada mm de espesor (5 mm = Bs 5 el metro).</p>
       </Tarjeta>

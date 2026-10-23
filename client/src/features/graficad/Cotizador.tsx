@@ -94,8 +94,17 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
   const [cliente, setCliente] = useState(conversacionInicial?.contacto_nombre || '');
   const [datos, setDatos] = useState<DatosCotizacion>(() => datosNuevos(tarifas));
   const [ocupado, setOcupado] = useState(false);
+  const [lineas, setLineas] = useState<{ id: string; nombre: string; numero: string | null; estado: string }[]>([]);
+  const [lineaEnvio, setLineaEnvio] = useState('');
 
   const conversacion = conversaciones.find((c) => c.id === conversacionId) || null;
+
+  // Por defecto sale por la línea corporativa elegida en "Catálogo y tarifas";
+  // si no hay, por la línea donde escribió el cliente.
+  const lineaPreferida = lineas.some((l) => l.id === tarifas.lineaCotizaciones) ? tarifas.lineaCotizaciones! : null;
+  useEffect(() => {
+    setLineaEnvio(lineaPreferida || conversacion?.linea_id || '');
+  }, [lineaPreferida, conversacion?.linea_id]);
 
   const cargarLista = useCallback(async () => {
     const { data, error } = await supabase.from('graficad_cotizaciones').select('*').order('creado_en', { ascending: false }).limit(30).returns<Cotizacion[]>();
@@ -103,6 +112,9 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
     setLista(data || []);
   }, []);
   useEffect(() => { cargarLista(); }, [cargarLista]);
+  useEffect(() => {
+    supabase.from('lineas_whatsapp').select('id, nombre, numero, estado').order('nombre').then(({ data }) => setLineas(data || []));
+  }, []);
 
   // Cuando terminan de cargar las tarifas guardadas, el ítem vacío inicial
   // apunta a un material que existe.
@@ -226,7 +238,7 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
       const resp = await fetch(`${backendUrl}/enviar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ telefono: conversacion.contacto_telefono, tipo: 'texto', texto, agente_id: usuario!.id, linea_id: conversacion.linea_id }),
+        body: JSON.stringify({ telefono: conversacion.contacto_telefono, tipo: 'texto', texto, agente_id: usuario!.id, linea_id: lineaEnvio || conversacion.linea_id }),
       });
       if (!resp.ok) {
         const cuerpo = await resp.json().catch(() => ({}));
@@ -426,6 +438,18 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
                 <span className="text-[12px]" style={{ color: TEXTO_TERCIARIO }}>Anticipo {tarifas.anticipo} %: {formatoBs(calculo.anticipo)} · válida {tarifas.validezDias} días</span>
                 <span className="disp text-[26px] font-bold tabular-nums" style={{ color: TEXTO_PRIMARIO }}>{formatoBs(calculo.total)}</span>
               </div>
+              {conversacion && lineas.length > 1 && (
+                <div className="mt-3">
+                  <label htmlFor="cot-linea" className={etiqueta} style={{ color: TEXTO_SECUNDARIO }}>Enviar desde</label>
+                  <select id="cot-linea" value={lineaEnvio} onChange={(e) => setLineaEnvio(e.target.value)} className={campo} style={campoStyle}>
+                    {lineas.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.nombre}{l.numero ? ` · ${l.numero}` : ''}{l.id === conversacion.linea_id ? ' (donde escribió el cliente)' : ''}{l.estado !== 'activo' ? ' · desconectada' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="flex gap-2 flex-wrap mt-3">
                 <Boton variante="primario" icono={Send} disabled={!conversacion || ocupado || sinInstalar} onClick={enviar} title={!conversacion ? 'Elegí el chat del cliente arriba' : undefined}>
                   {editando?.estado === 'enviada' ? 'Reenviar al chat' : 'Enviar al chat'}

@@ -38,6 +38,9 @@ export interface Tarifas {
   factorMedia: number;
   anticipo: number;
   validezDias: number;
+  // Línea de WhatsApp desde la que salen las cotizaciones (la corporativa).
+  // Vacía: sale por la línea del chat del cliente.
+  lineaCotizaciones?: string | null;
   materiales: Material[];
 }
 
