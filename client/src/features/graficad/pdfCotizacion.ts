@@ -1,5 +1,8 @@
 import { jsPDF } from 'jspdf';
 import logoGraficad from './logo-graficad-pdf.png';
+import iconoEmail from './pdf-icono-email.png';
+import iconoTelefono from './pdf-icono-telefono.png';
+import iconoDireccion from './pdf-icono-direccion.png';
 import { calcularCotizacion, datosPdf, formatoBs, formatoNumero, nombreMaterial, type DatosCotizacion, type Tarifas } from './tarifas';
 
 // PDF de la cotización para el cliente, con el formato de las proformas de
@@ -61,6 +64,7 @@ export async function pdfCotizacion(opciones: {
   tarifas: Tarifas;
   /** Logo ya cargado (para generar el PDF fuera del navegador). */
   logo?: Imagen | null;
+  iconos?: (Imagen | null)[];
   fecha?: Date;
 }): Promise<jsPDF> {
   const { numero, cliente, datos, tarifas } = opciones;
@@ -69,6 +73,8 @@ export async function pdfCotizacion(opciones: {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   // El logo de las proformas, recortado sobre el mismo naranja de la cabecera.
   const logo = opciones.logo !== undefined ? opciones.logo : await cargarImagen(logoGraficad, 800, 'PNG');
+  // Íconos del pie (correo, teléfono, dirección), recortados de las proformas.
+  const iconos = opciones.iconos ?? (await Promise.all([iconoEmail, iconoTelefono, iconoDireccion].map((u) => cargarImagen(u, 120, 'PNG'))));
   const imagenes = await Promise.all(datos.items.map((i) => (i.imagen ? cargarImagen(i.imagen, 1400, 'JPEG') : Promise.resolve(null))));
 
   const terminos = [(datos.terminos ?? '').trim() || p.terminos, `Proforma válida por ${tarifas.validezDias} días.`].join(' ');
@@ -101,9 +107,14 @@ export async function pdfCotizacion(opciones: {
     doc.setFontSize(7.5);
     doc.text(doc.splitTextToSize(terminos, 100), 18, INICIO_PIE + 18.5);
     doc.setFontSize(8);
-    [p.email, p.telefonos, p.direccion].filter(Boolean).forEach((t, i) => {
-      doc.setFillColor(...NEGRO);
-      doc.circle(ANCHO - 18, INICIO_PIE + 10 + i * 7, 2.2, 'F');
+    [p.email, p.telefonos, p.direccion].forEach((t, i) => {
+      if (!t) return;
+      const ic = iconos[i];
+      if (ic) doc.addImage(ic.data, ic.formato, ANCHO - 21, INICIO_PIE + 7.2 + i * 7, 5.6, 5.6);
+      else {
+        doc.setFillColor(...NEGRO);
+        doc.circle(ANCHO - 18.2, INICIO_PIE + 10 + i * 7, 2.6, 'F');
+      }
       doc.text(t, ANCHO - 23, INICIO_PIE + 11 + i * 7, { align: 'right' });
     });
   };
