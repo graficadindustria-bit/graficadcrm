@@ -26,7 +26,7 @@ recargá tu CRM con **Ctrl + F5**. Ya están las mejoras.
 
 ---
 
-## Qué trae la versión 5
+## Qué trae la versión 6
 
 | Mejora | Dónde está |
 |---|---|
@@ -37,6 +37,8 @@ recargá tu CRM con **Ctrl + F5**. Ya están las mejoras.
 | Confirmación de cita al agendar y actividades con checklist del gerente | Agenda |
 | Pestaña "Por vencer" (chats con la ventana de 24 h por cerrarse) y transferir chat | Bandeja |
 | Origen del cliente por anuncio de Facebook / Instagram | Reportes → Por origen |
+| Varias oportunidades por contacto: editar, borrar, ganada/perdida, agregar e historial | Oportunidades, y pestaña Venta de la ficha |
+| Filtro por % de cierre y «Producto o servicio» en cada oportunidad | Oportunidades |
 
 > ⚠️ Los **documentos del cliente** (por ejemplo, la foto de un carnet) se guardan en un
 > almacenamiento cuyo enlace es público: quien tenga el enlace puede verlos. Usalo con cuidado.
