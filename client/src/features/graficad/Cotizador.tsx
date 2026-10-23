@@ -546,11 +546,23 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
                         </div>
                       ))}
                     </div>
-                    {item.cortes?.length ? (
-                      <div className="mt-2">
-                        <VistaPlancha piezas={item.cortes} hoja={hojaDe(item.lamina)} separacion={tarifas.separacionCorte} alto={150} />
+                    {(item.imagen || item.cortes?.length) ? (
+                      <div className="mt-2 flex gap-3 flex-wrap items-start">
+                        {item.imagen && (
+                          <a href={item.imagen} target="_blank" rel="noreferrer" className="shrink-0" title="Abrir la imagen de referencia">
+                            <img src={item.imagen} alt="Imagen de referencia" className="rounded-lg object-contain" style={{ height: 150, maxWidth: 220, border: '1px solid var(--line)', backgroundColor: '#fff' }} />
+                          </a>
+                        )}
+                        {item.cortes?.length ? (
+                          <div className="flex-1" style={{ minWidth: 200 }}>
+                            <VistaPlancha piezas={item.cortes} hoja={hojaDe(item.lamina)} separacion={tarifas.separacionCorte} alto={150} />
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
+                    {!item.cortes?.some((p) => p.ancho > 0 && p.alto > 0) && item.lamina !== 'ninguna' && (
+                      <div className="text-[12px] mt-1.5" style={{ color: TEXTO_TERCIARIO }}>Para ver cómo va en la plancha, cargá las medidas en «Piezas a cortar» del ítem.</div>
+                    )}
                     <div className="text-[12px] mt-1.5 tabular-nums" style={{ color: TEXTO_TERCIARIO }}>
                       Lámina {formatoBs(ci.precioMaterial)} · Corte {ci.detalleCorte} = {formatoBs(ci.corte)}
                       {ci.descuentoRouter ? ` · Router −${formatoBs(ci.descuentoRouter)}` : ''}

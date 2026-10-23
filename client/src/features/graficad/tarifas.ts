@@ -291,6 +291,7 @@ export function textoOrdenCorte(numero: string, cliente: string, d: DatosCotizac
       ...(item.grabadoMin ? [`   Grabado relleno: ${item.grabadoMin} min`] : []),
       ...(item.cortes?.some((p) => p.ancho > 0 && p.alto > 0) ? [`   Medidas: ${item.cortes.filter((p) => p.ancho > 0 && p.alto > 0).map((p) => `${formatoNumero(p.ancho, 1)} × ${formatoNumero(p.alto, 1)} cm × ${p.cantidad}`).join(', ')}`] : []),
       `   Piezas: ${item.piezas}`,
+      ...(item.imagen ? [`   Referencia: ${item.imagen}`] : []),
     ].join('\n');
   });
   return [`*Orden de corte ${numero.replace('COT', 'OC')}*`, `Cliente: ${cliente}`, '', ...bloques, ...(d.notas.trim() ? ['', `Notas: ${d.notas.trim()}`] : [])].join('\n');
