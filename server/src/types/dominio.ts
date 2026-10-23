@@ -19,6 +19,7 @@ export type EmpresaRow = {
   color_primario: string | null;
   color_acento: string | null;
   logo_url: string | null;
+  cierre_auto_horas: number | null;
 };
 
 export type LineaWhatsappRow = {
@@ -44,6 +45,9 @@ export type MensajeProgramadoRow = {
   linea_id: string;
   telefono: string;
   contenido: string;
+  tipo: TipoMensaje;
+  media_url: string | null;
+  mimetype: string | null;
   enviar_en: string;
   estado: 'pendiente' | 'enviando' | 'enviado' | 'cancelado' | 'error';
   cancelar_si_responde: boolean;
@@ -70,6 +74,7 @@ export type MensajeRow = {
   tipo: TipoMensaje;
   contenido: string | null;
   media_url: string | null;
+  creado_en: string;
   whatsapp_id: string | null;
   estado_entrega: EstadoEntregaMensaje;
   error_entrega: string | null;
@@ -80,6 +85,7 @@ export type ContactoRow = {
   empresa_id: string;
   telefono: string;
   nombre?: string | null;
+  origen?: string | null;
   lid: string | null;
 };
 

@@ -5,6 +5,7 @@ import type { ConversacionRow, TipoMensaje } from '../types/dominio.js';
 import { obtenerEmpresaIdDeLinea } from './empresa.js';
 import { buscarContactoPorLid, registrarLidDeContacto } from './contactos.js';
 import { intentarResponderAutomaticamente } from './bot-automatico.js';
+import { guardarOrigenDeAnuncio } from './origen-anuncio.js';
 
 interface ResultadoDeteccion {
   tipo: TipoMensaje;
@@ -206,6 +207,7 @@ export async function procesarMensajeEntrante(msg: WAMessage, sock: WASocket, li
 
   const nombrePerfil = msg.pushName?.trim();
   if (nombrePerfil && !msg.key.fromMe) await guardarNombreDePerfil(lineaId, telefono, conversacion.id, nombrePerfil);
+  await guardarOrigenDeAnuncio(lineaId, telefono, msg);
 
   // Baileys puede entregar el mismo mensaje más de una vez (reconexiones,
   // reenvíos de la sincronización). Si ya lo guardamos con ese whatsapp_id,

@@ -3,12 +3,14 @@ import { CalendarClock, Clock, X } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { BLUE, BORDE, TEAL, TEXTO_SECUNDARIO, TEXTO_TERCIARIO } from '../../lib/tema';
 import { aInstanteUTC, aLocalEnZona, etiquetaDeZona, formatearEnZona, zonaDelNavegador } from '../../lib/zonaHoraria';
-import type { Conversacion, MensajeProgramado, Usuario } from '../../lib/tipos';
+import type { Conversacion, MensajeProgramado, TipoMensaje, Usuario } from '../../lib/tipos';
 
 interface ProgramarMensajeProps {
   seleccionada: Conversacion;
   usuario: Usuario;
   borrador: string;
+  /** Archivo elegido en el compositor: se programa junto con el mensaje. */
+  adjunto: { file: File; tipo: TipoMensaje } | null;
   abierto: boolean;
   onCerrar: () => void;
   onProgramado: () => void;
@@ -25,7 +27,7 @@ function proximaHora(zona: string, horas: number, minutos: number, diasMas: numb
 
 // Aviso interno para que el bloque del hilo y el panel del compositor se
 // actualicen al instante cuando uno de los dos programa o cancela algo.
-const EVENTO_CAMBIO = 'programados-cambio';
+export const EVENTO_CAMBIO = 'programados-cambio';
 
 export function useProgramados(conversacionId: string) {
   const [lista, setLista] = useState<MensajeProgramado[]>([]);
@@ -33,7 +35,7 @@ export function useProgramados(conversacionId: string) {
   const cargar = useCallback(async () => {
     const { data } = await supabase
       .from('mensajes_programados')
-      .select('id, conversacion_id, contenido, enviar_en, estado, cancelar_si_responde, motivo, creado_en')
+      .select('id, conversacion_id, contenido, tipo, media_url, enviar_en, estado, cancelar_si_responde, motivo, creado_en')
       .eq('conversacion_id', conversacionId)
       .in('estado', ['pendiente', 'enviando', 'error', 'cancelado'])
       .order('enviar_en')
@@ -55,7 +57,9 @@ export function useProgramados(conversacionId: string) {
   return { lista, recargar: cargar, avisarCambio };
 }
 
-export default function ProgramarMensaje({ seleccionada, usuario, borrador, abierto, onCerrar, onProgramado }: ProgramarMensajeProps) {
+const ETIQUETA_TIPO: Record<TipoMensaje, string> = { texto: '', imagen: 'Imagen', pdf: 'PDF', documento: 'Archivo', audio: 'Audio' };
+
+export default function ProgramarMensaje({ seleccionada, usuario, borrador, adjunto, abierto, onCerrar, onProgramado }: ProgramarMensajeProps) {
   const zona = usuario.zona_horaria || zonaDelNavegador();
   const { recargar, avisarCambio } = useProgramados(seleccionada.id);
   const [cuando, setCuando] = useState('');
@@ -72,21 +76,41 @@ export default function ProgramarMensaje({ seleccionada, usuario, borrador, abie
 
   const programar = async () => {
     setError('');
-    if (!borrador.trim()) return setError('Escribí primero el mensaje en el cuadro de abajo.');
+    if (!borrador.trim() && !adjunto) return setError('Escribí primero el mensaje en el cuadro de abajo.');
     if (!cuando) return setError('Elegí fecha y hora.');
     const instante = aInstanteUTC(cuando, zona);
     if (instante.getTime() < Date.now() + 30_000) return setError('Esa hora ya pasó. Elegí una hora futura.');
 
     setGuardando(true);
-    const { error: errorBD } = await supabase.from('mensajes_programados').insert({
+    const base = {
       conversacion_id: seleccionada.id,
       linea_id: seleccionada.linea_id,
       telefono: seleccionada.contacto_telefono,
-      contenido: borrador.trim(),
-      enviar_en: instante.toISOString(),
       cancelar_si_responde: cancelarSiResponde,
       creado_por: usuario.id,
-    });
+    };
+    const texto = borrador.trim();
+    const filas: Record<string, unknown>[] = [];
+    if (adjunto) {
+      // El archivo se sube ya; el servidor lo manda a la hora elegida.
+      const ext = adjunto.file.name.split('.').pop();
+      const ruta = `${usuario.empresa_id}/${seleccionada.id}/${Date.now()}.${ext}`;
+      const { error: errorSubida } = await supabase.storage.from('media').upload(ruta, adjunto.file);
+      if (errorSubida) {
+        setGuardando(false);
+        return setError('No se pudo subir el archivo.');
+      }
+      const mediaUrl = supabase.storage.from('media').getPublicUrl(ruta).data.publicUrl;
+      // En una imagen el texto va de leyenda; en el resto de archivos WhatsApp
+      // no muestra leyenda, así que el texto sale como mensaje aparte justo después.
+      const esImagen = adjunto.tipo === 'imagen';
+      const contenido = adjunto.tipo === 'pdf' || adjunto.tipo === 'documento' ? adjunto.file.name : esImagen ? texto : '';
+      filas.push({ ...base, tipo: adjunto.tipo, contenido, media_url: mediaUrl, mimetype: adjunto.tipo === 'documento' ? adjunto.file.type : null, enviar_en: instante.toISOString() });
+      if (texto && !esImagen) filas.push({ ...base, tipo: 'texto', contenido: texto, enviar_en: new Date(instante.getTime() + 5000).toISOString() });
+    } else {
+      filas.push({ ...base, tipo: 'texto', contenido: texto, enviar_en: instante.toISOString() });
+    }
+    const { error: errorBD } = await supabase.from('mensajes_programados').insert(filas);
     setGuardando(false);
     if (errorBD) return setError('No se pudo programar el mensaje.');
     setCuando('');
@@ -104,7 +128,7 @@ export default function ProgramarMensaje({ seleccionada, usuario, borrador, abie
             <button onClick={onCerrar} aria-label="Cerrar"><X size={15} color={TEXTO_TERCIARIO} /></button>
           </div>
           <div className="text-[12px] rounded-md px-2.5 py-1.5 bg-[var(--surface)] truncate" style={{ border: `1px solid ${BORDE}`, color: borrador.trim() ? 'var(--fg)' : TEXTO_TERCIARIO }}>
-            {borrador.trim() || 'Escribí el mensaje en el cuadro de abajo y volvé a abrir esto.'}
+            {adjunto ? `${ETIQUETA_TIPO[adjunto.tipo]}: ${adjunto.file.name}${borrador.trim() ? ` · ${borrador.trim()}` : ''}` : borrador.trim() || 'Escribí el mensaje en el cuadro de abajo y volvé a abrir esto.'}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <input
@@ -166,7 +190,7 @@ export function BloqueProgramados({ conversacionId, usuario }: { conversacionId:
               {m.estado === 'pendiente' || m.estado === 'enviando' ? <Clock size={12} /> : <CalendarClock size={12} />}
               {m.estado === 'error' ? 'No se envió' : m.estado === 'cancelado' ? 'Cancelado' : 'Programado'} · {formatearEnZona(m.enviar_en, zona)}
             </div>
-            <div className="mt-1 break-words" style={{ color: 'var(--fg)' }}>{m.contenido}</div>
+            <div className="mt-1 break-words" style={{ color: 'var(--fg)' }}>{m.tipo !== 'texto' && <span className="font-semibold">{ETIQUETA_TIPO[m.tipo]}{m.contenido ? ': ' : ''}</span>}{m.contenido}</div>
             {m.motivo && m.estado !== 'pendiente' && <div className="mt-0.5 text-[11.5px]" style={{ color }}>{m.motivo}</div>}
             {m.estado === 'pendiente' && m.cancelar_si_responde && <div className="mt-0.5 text-[11px]" style={{ color: TEXTO_TERCIARIO }}>Se cancela si el cliente responde</div>}
             <div className="mt-1 flex justify-end">

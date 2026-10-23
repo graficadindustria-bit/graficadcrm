@@ -31,6 +31,8 @@ export interface MensajeProgramado {
   id: string;
   conversacion_id: string;
   contenido: string;
+  tipo: TipoMensaje;
+  media_url: string | null;
   enviar_en: string;
   estado: 'pendiente' | 'enviando' | 'enviado' | 'cancelado' | 'error';
   cancelar_si_responde: boolean;
@@ -83,6 +85,8 @@ export interface Contacto {
   etapa_actualizada_en: string | null;
   valor_estimado: number | null;
   probabilidad_cierre: number | null;
+  motivo_perdida_id: string | null;
+  folio: string | null;
   creado_en: string;
   actualizado_en: string;
 }
@@ -96,6 +100,39 @@ export interface EtapaVenta {
   tipo: TipoEtapa;
   orden: number;
   color: number | null;
+  /** % de cierre que recibe un contacto al entrar en la etapa; null = no cambia. */
+  probabilidad: number | null;
+}
+
+export type TipoCampo = 'texto' | 'numero' | 'fecha' | 'seleccion' | 'casilla';
+
+// Campo propio de la ficha de cliente, definido por cada empresa — ver
+// database/029_ficha_personalizable.sql.
+export interface CampoPersonalizado {
+  id: string;
+  empresa_id: string;
+  nombre: string;
+  tipo: TipoCampo;
+  opciones: string[];
+  orden: number;
+}
+
+export interface DocumentoContacto {
+  id: string;
+  contacto_id: string;
+  nombre: string;
+  ruta: string;
+  url: string;
+  tamano: number | null;
+  creado_en: string;
+}
+
+// Por qué se perdió una venta; la lista la define cada empresa — ver
+// database/028_probabilidad_etapa_y_motivos_perdida.sql.
+export interface MotivoPerdida {
+  id: string;
+  empresa_id: string;
+  nombre: string;
 }
 
 // Etiquetas de WhatsApp Business, sincronizadas de solo lectura desde la
@@ -117,11 +154,22 @@ export interface Nota {
   usuarios?: { nombre: string } | null;
 }
 
+export interface TareaItem {
+  id: string;
+  tarea_id: string;
+  texto: string;
+  hecho: boolean;
+  orden: number;
+}
+
 export interface Tarea {
   id: string;
   empresa_id: string;
-  contacto_id: string;
+  /** Null en una actividad que el gerente le deja al equipo, sin cliente. */
+  contacto_id: string | null;
   titulo: string;
+  descripcion?: string | null;
+  creado_por?: string | null;
   fecha: string | null;
   completada: boolean;
   asignado_a: string;
@@ -135,6 +183,7 @@ export interface Empresa {
   color_primario: string | null;
   color_acento: string | null;
   logo_url: string | null;
+  cierre_auto_horas: number | null;
   creado_en: string;
 }
 

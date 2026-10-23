@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCheck, Flame, Search, User } from 'lucide-react';
 import { CHIP_LINEA, colorEtiquetaWhatsapp } from '../../lib/tema';
-import { formatoHora, inicialesDe, nombreConversacion, tieneNombre } from './utils';
+import { formatoHora, formatoTelefono, inicialesDe, nombreConversacion, tieneNombre } from './utils';
 import { esOportunidad, type ResumenContacto, type UltimoMensaje } from './hooks/useConversaciones';
 import type { Conversacion, EtiquetaWhatsapp, LineaWhatsapp } from '../../lib/tipos';
 
@@ -12,6 +12,7 @@ interface ListaConversacionesProps {
   etiquetasPorTelefono: Record<string, EtiquetaWhatsapp[]>;
   contactoPorTelefono: Record<string, ResumenContacto>;
   pendientes: Record<string, number>;
+  ultimoDelCliente: Record<string, string>;
   esVendedor: boolean;
   miId: string;
   seleccionadaId: string | null;
@@ -21,7 +22,20 @@ interface ListaConversacionesProps {
   compacta: boolean;
 }
 
-type Pestana = 'mios' | 'sin_asignar' | 'resueltos';
+type Pestana = 'mios' | 'sin_asignar' | 'por_vencer' | 'resueltos';
+
+// WhatsApp deja responder con texto libre hasta 24 h después del último mensaje
+// del cliente. "Por vencer" son los chats que ya pasaron las 20 h.
+const VENTANA_MIN = 24 * 60;
+const AVISO_VENTANA_MIN = 4 * 60;
+
+// Minutos que le quedan a la ventana de 24 h; null si ya venció o el cliente
+// nunca escribió.
+export function minutosRestantesVentana(ultimoCliente: string | undefined, ahora: number): number | null {
+  if (!ultimoCliente) return null;
+  const restante = VENTANA_MIN - Math.floor((ahora - new Date(ultimoCliente).getTime()) / 60000);
+  return restante > 0 ? restante : null;
+}
 
 interface Filtros {
   soloSinResponder: boolean;
@@ -80,6 +94,7 @@ export default function ListaConversaciones({
   etiquetasPorTelefono,
   contactoPorTelefono,
   pendientes,
+  ultimoDelCliente,
   esVendedor,
   miId,
   seleccionadaId,
@@ -125,10 +140,15 @@ export default function ListaConversaciones({
     [conversaciones, lineaSeleccionada, busqueda, esVendedor, ultimosMensajes, etiquetasPorTelefono],
   );
 
+  const porVencer = (c: Conversacion) => {
+    const restante = minutosRestantesVentana(ultimoDelCliente[c.id], ahora);
+    return restante !== null && restante <= AVISO_VENTANA_MIN;
+  };
   const esMio = (c: Conversacion) => c.agente_asignado_id === miId;
   const conteos = {
     mios: abiertos.filter(esMio).length,
     sin_asignar: abiertos.filter((c) => c.agente_asignado_id === null).length,
+    por_vencer: abiertos.filter(porVencer).length,
   };
   const sinResponder = abiertos.filter((c) => minutosEsperando(c, ultimosMensajes[c.id], ahora) !== null).length;
 
@@ -146,12 +166,14 @@ export default function ListaConversaciones({
       if (c.estado === 'cerrado') return false;
       if (pestana === 'mios' && !esMio(c)) return false;
       if (pestana === 'sin_asignar' && c.agente_asignado_id !== null) return false;
+      if (pestana === 'por_vencer' && !porVencer(c)) return false;
       if (filtros.soloSinResponder && minutosEsperando(c, ultimosMensajes[c.id], ahora) === null) return false;
       if (filtros.sinLeer && !(pendientes[c.id] > 0)) return false;
       if (filtros.etiquetaId !== 'todas' && !(etiquetasPorTelefono[c.contacto_telefono] || []).some((e) => e.id === filtros.etiquetaId)) return false;
       return true;
     })
     .sort((a, b) => {
+      if (pestana === 'por_vencer') return (minutosRestantesVentana(ultimoDelCliente[a.id], ahora) ?? 0) - (minutosRestantesVentana(ultimoDelCliente[b.id], ahora) ?? 0);
       if (pestana === 'resueltos' || !(filtros.antiguosPrimero || filtros.soloSinResponder)) return 0;
       // Primero los que esperan respuesta hace más tiempo.
       const ea = minutosEsperando(a, ultimosMensajes[a.id], ahora);
@@ -165,6 +187,7 @@ export default function ListaConversaciones({
   const pestanas: { id: Pestana; etiqueta: string; conteo?: number }[] = [
     { id: 'mios', etiqueta: 'Mis chats', conteo: conteos.mios },
     { id: 'sin_asignar', etiqueta: 'Sin asignar', conteo: conteos.sin_asignar },
+    { id: 'por_vencer', etiqueta: 'Por vencer', conteo: conteos.por_vencer },
     { id: 'resueltos', etiqueta: 'Resueltos' },
   ];
 
@@ -260,6 +283,7 @@ export default function ListaConversaciones({
     const activa = seleccionadaId === c.id;
     const ultimo = ultimosMensajes[c.id];
     const espera = minutosEsperando(c, ultimo, ahora);
+    const restanteVentana = minutosRestantesVentana(ultimoDelCliente[c.id], ahora);
     const resumen = contactoPorTelefono[c.contacto_telefono];
     const oportunidad = esOportunidad(resumen);
     const etiquetas = etiquetasPorTelefono[c.contacto_telefono] || [];
@@ -292,12 +316,15 @@ export default function ListaConversaciones({
             {etiquetas.slice(1, 4).map((e) => (
               <i key={e.id} title={e.nombre} className="shrink-0 rounded-full" style={{ width: 8, height: 8, backgroundColor: colorEtiquetaWhatsapp(e.color) }} />
             ))}
-            {espera !== null && espera > 5 ? (
+            {pestana === 'por_vencer' && restanteVentana !== null ? (
+              <span className="ml-auto shrink-0 text-[12.5px] font-semibold whitespace-nowrap" style={{ color: restanteVentana <= 60 ? 'var(--bad)' : 'var(--warn)' }}>Quedan {textoEspera(restanteVentana)}</span>
+            ) : espera !== null && espera > 5 ? (
               <span className="ml-auto shrink-0 text-[12.5px] font-semibold whitespace-nowrap" style={{ color: 'var(--bad)' }}>Esperando {textoEspera(espera)}</span>
             ) : (
               <span className="ml-auto shrink-0 text-[12.5px] whitespace-nowrap" style={{ color: sinLeer > 0 ? 'var(--accent)' : 'var(--fg-3)', fontWeight: sinLeer > 0 ? 600 : 400, fontVariantNumeric: 'tabular-nums' }}>{formatoHora(c.ultima_actividad)}</span>
             )}
           </div>
+          {conNombre && <span className="truncate text-[12px]" style={{ color: 'var(--fg-3)', fontVariantNumeric: 'tabular-nums' }}>{formatoTelefono(c.contacto_telefono)}</span>}
           <div className="flex items-center gap-1.5 min-w-0" style={{ color: 'var(--fg-2)' }}>
             {ultimo && ultimo.remitente !== 'cliente' && <CheckCheck size={15} className="shrink-0" style={{ color: 'var(--accent)' }} aria-label="Enviado" />}
             <span className="truncate flex-1 text-[13.5px]">{ultimo ? ultimo.contenido || 'Archivo adjunto' : 'Sin mensajes'}</span>
@@ -332,6 +359,7 @@ export default function ListaConversaciones({
   const vacio: Record<Pestana, string> = {
     mios: 'No tienes chats asignados. Toma uno desde "Sin asignar".',
     sin_asignar: 'No hay chats sin asignar. Buen trabajo.',
+    por_vencer: 'Ningún chat está por perder la ventana de 24 h de WhatsApp.',
     resueltos: 'Todavía no hay chats resueltos.',
   };
 

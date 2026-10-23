@@ -1,4 +1,5 @@
-# Publica tu CRM en internet cada vez que hacés `git push` a la rama main.
+# Publica tu CRM en internet cada vez que hacés `git push` a la rama main
+# (o cuando apretás "Run workflow").
 #
 # GitHub compila todo acá (así el servidor no se satura) y le manda el
 # paquete listo al servidor. Si algo falla, tu CRM sigue con la versión anterior.
@@ -24,7 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Revisar que estén los 6 secretos
+      - name: Revisar tus 6 secretos
         id: secretos
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -34,18 +35,53 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
-          faltan=""
+          problemas=0
+          error() { echo "::error::$1"; problemas=$((problemas + 1)); }
+
+          # Ninguno de estos valores admite espacios ni saltos de línea.
+          limpio() { printf '%s' "$1" | tr -d '[:space:]'; }
+
+          # ¿Faltan?
           for s in DEPLOY_HOST DEPLOY_USER DEPLOY_KEY SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY; do
-            [ -n "${!s}" ] || faltan="$faltan $s"
+            [ -n "${!s}" ] || error "Falta el secreto $s. Cargalo en Settings → Secrets and variables → Actions."
           done
-          if [ -n "$faltan" ]; then
-            echo "::error::Faltan estos secretos en tu repo:$faltan (Settings → Secrets and variables → Actions)."
+
+          # ¿Están bien escritos? Solo se revisa la forma; nunca se muestra el valor.
+          if [ -n "$DEPLOY_HOST" ]; then
+            h="$(limpio "$DEPLOY_HOST")"
+            [[ "$h" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || error "DEPLOY_HOST está mal: tiene que ser SOLO la IP del servidor (por ejemplo 13.140.175.174), sin https:// ni texto de más. Escribila a mano."
+          fi
+          if [ -n "$DEPLOY_USER" ]; then
+            u="$(limpio "$DEPLOY_USER")"
+            [[ "$u" =~ ^crm-[a-z0-9]+$ ]] || error "DEPLOY_USER está mal: tiene que verse como crm-tunombre (por ejemplo crm-gasbol), en una sola línea y sin '---'. Escribilo a mano; no copies la línea 'Nombre:' de la ficha."
+          fi
+          if [ -n "$DEPLOY_KEY" ]; then
+            printf '%s\n' "$DEPLOY_KEY" | tr -d '\r' > /tmp/llave_revision
+            chmod 600 /tmp/llave_revision
+            if ! ssh-keygen -y -f /tmp/llave_revision > /dev/null 2>&1; then
+              error "DEPLOY_KEY está mal copiada o incompleta. Abrí tu ficha con el Bloc de notas, seleccioná desde -----BEGIN OPENSSH PRIVATE KEY----- hasta -----END OPENSSH PRIVATE KEY----- (con esas dos líneas) y pegala completa en el cuadro grande del secreto."
+            fi
+            rm -f /tmp/llave_revision
+          fi
+          if [ -n "$SUPABASE_URL" ]; then
+            [[ "$(limpio "$SUPABASE_URL")" =~ ^https://[a-z0-9-]+\.supabase\.co/?$ ]] || error "SUPABASE_URL está mal: tiene que verse como https://xxxx.supabase.co (Supabase → Project Settings → Data API → Project URL)."
+          fi
+          for s in SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY; do
+            v="${!s}"
+            if [ -n "$v" ] && [ "$v" != "$(limpio "$v")" ]; then
+              error "$s tiene espacios o saltos de línea. Copiala de nuevo desde Supabase → Project Settings → API Keys, sin nada más."
+            fi
+          done
+
+          if [ "$problemas" -gt 0 ]; then
+            echo "::error::Encontré $problemas problema(s) en tus secretos. Corregilos y volvé a apretar Run workflow."
             exit 1
           fi
+          echo "✓ Los 6 secretos tienen buena pinta."
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -70,7 +106,7 @@ jobs:
         run: |
           # Solo las dependencias que necesita el servidor para funcionar.
           npm ci --omit=dev --workspace server
-          printf 'SUPABASE_URL=%s\nSUPABASE_SERVICE_KEY=%s\n' "$SUPABASE_URL" "$SUPABASE_SERVICE_KEY" > .env
+          printf 'SUPABASE_URL=%s\nSUPABASE_SERVICE_KEY=%s\n' "$(printf '%s' "$SUPABASE_URL" | tr -d '[:space:]')" "$(printf '%s' "$SUPABASE_SERVICE_KEY" | tr -d '[:space:]')" > .env
           carpetas="server/dist server/package.json client/dist node_modules package.json .env"
           [ -d server/node_modules ] && carpetas="$carpetas server/node_modules"
           tar -czf paquete.tar.gz $carpetas
@@ -84,7 +120,17 @@ jobs:
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/despliegue
+          printf '%s\n' "$DEPLOY_KEY" | tr -d '\r' > ~/.ssh/despliegue
           chmod 600 ~/.ssh/despliegue
-          ssh -i ~/.ssh/despliegue -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
-            "$DEPLOY_USER@$DEPLOY_HOST" publicar < paquete.tar.gz
+          host="$(printf '%s' "$DEPLOY_HOST" | tr -d '[:space:]')"
+          usuario="$(printf '%s' "$DEPLOY_USER" | tr -d '[:space:]')"
+          set +e
+          ssh -i ~/.ssh/despliegue -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
+            "$usuario@$host" publicar < paquete.tar.gz
+          codigo=$?
+          # 255 es de SSH mismo (no pudo conectar o entrar); otro código viene del servidor.
+          if [ "$codigo" -eq 255 ]; then
+            echo "::error::No pude entrar al servidor. Revisá DEPLOY_USER (crm-tunombre), DEPLOY_HOST (la IP) y DEPLOY_KEY (la llave completa de tu ficha)."
+          fi
+          exit "$codigo"

@@ -2,6 +2,7 @@ import { AuthProvider, useAuth } from './lib/AuthContext';
 import Login from './features/login/Login';
 import RestablecerContrasena from './features/login/RestablecerContrasena';
 import Bandeja from './features/bandeja/Bandeja';
+import AvisoBaseAtrasada from './components/AvisoBaseAtrasada';
 import { ToastProvider } from './components/ui';
 
 function Contenido() {
@@ -29,7 +30,12 @@ function Contenido() {
     );
   }
 
-  return <Bandeja />;
+  return (
+    <>
+      <Bandeja />
+      <AvisoBaseAtrasada />
+    </>
+  );
 }
 
 export default function App() {

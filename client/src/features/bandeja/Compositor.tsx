@@ -16,6 +16,12 @@ import type { Conversacion, Mensaje, RespuestaAutomatica, RespuestaRapida, TipoM
 // que el navegador sepa grabar.
 const TIPOS_AUDIO_PREFERIDOS = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
 
+function formatoTamano(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function formatoTiempoGrabacion(segundos: number): string {
   const m = Math.floor(segundos / 60);
   const s = segundos % 60;
@@ -82,6 +88,9 @@ export default function Compositor({ mensajes, seleccionada, usuario, respuestas
   const [borrador, setBorrador] = useState('');
   const [mostrarMenu, setMostrarMenu] = useState(false);
   const [subiendoArchivo, setSubiendoArchivo] = useState(false);
+  // Archivo elegido desde el clip que espera en la caja hasta que el agente
+  // confirme con Enter o el botón de enviar — no se manda al elegirlo.
+  const [adjunto, setAdjunto] = useState<{ file: File; tipo: TipoMensaje; vistaPrevia: string | null } | null>(null);
   const [errorEnvio, setErrorEnvio] = useState('');
   const [mostrarRespuestas, setMostrarRespuestas] = useState(false);
   const [mostrarBots, setMostrarBots] = useState(false);
@@ -93,6 +102,7 @@ export default function Compositor({ mensajes, seleccionada, usuario, respuestas
   const inputImagenRef = useRef<HTMLInputElement>(null);
   const inputPdfRef = useRef<HTMLInputElement>(null);
   const inputDocumentoRef = useRef<HTMLInputElement>(null);
+  const inputAudioRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const grabadorRef = useRef<MediaRecorder | null>(null);
   const fragmentosRef = useRef<Blob[]>([]);
@@ -107,7 +117,25 @@ export default function Compositor({ mensajes, seleccionada, usuario, respuestas
   useEffect(() => {
     setMostrarRespuestas(false);
     setMostrarBots(false);
+    setAdjunto(null);
   }, [seleccionada.id]);
+
+  // Libera la URL de la miniatura cuando se cambia o se quita el adjunto.
+  useEffect(() => {
+    return () => {
+      if (adjunto?.vistaPrevia) URL.revokeObjectURL(adjunto.vistaPrevia);
+    };
+  }, [adjunto]);
+
+  const elegirArchivo = (input: HTMLInputElement, tipo: TipoMensaje) => {
+    const file = input.files?.[0];
+    // Se limpia para que elegir el mismo archivo otra vez vuelva a disparar onChange.
+    input.value = '';
+    if (!file) return;
+    setErrorEnvio('');
+    setAdjunto({ file, tipo, vistaPrevia: tipo === 'imagen' ? URL.createObjectURL(file) : null });
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  };
 
   const dispararBot = async (bot: RespuestaAutomatica) => {
     setDisparandoBotId(bot.id);
@@ -143,8 +171,13 @@ export default function Compositor({ mensajes, seleccionada, usuario, respuestas
     toast('Nota guardada. Solo la ve tu equipo.', 'ok');
   };
 
-  const enviarMensaje = async () => {
+  const enviarMensaje = () => {
     if (esNota) return guardarNota();
+    if (adjunto) return enviarAdjunto();
+    return enviarTexto();
+  };
+
+  const enviarTexto = async () => {
     if (enviandoRef.current || !borrador.trim()) return;
     enviandoRef.current = true;
     const texto = borrador;
@@ -170,7 +203,8 @@ export default function Compositor({ mensajes, seleccionada, usuario, respuestas
     }
   };
 
-  const subirYEnviarArchivo = async (file: File, tipo: TipoMensaje) => {
+  // Devuelve si salió bien, para que enviarAdjunto sepa si limpiar la caja.
+  const subirYEnviarArchivo = async (file: File, tipo: TipoMensaje, leyenda?: string): Promise<boolean> => {
     setSubiendoArchivo(true);
     setErrorEnvio('');
     try {
@@ -193,7 +227,7 @@ export default function Compositor({ mensajes, seleccionada, usuario, respuestas
         body: JSON.stringify({
           telefono: seleccionada.contacto_telefono,
           tipo,
-          texto: esDocumento ? file.name : undefined,
+          texto: esDocumento ? file.name : leyenda || undefined,
           mimetype: tipo === 'documento' ? file.type : undefined,
           media_url: mediaUrl,
           agente_id: usuario.id,
@@ -204,12 +238,33 @@ export default function Compositor({ mensajes, seleccionada, usuario, respuestas
 
       // Igual que en enviarMensaje: el backend ya inserta la fila en `mensajes`.
       await supabase.from('conversaciones').update({ ultima_actividad: new Date().toISOString() }).eq('id', seleccionada.id);
+      return true;
     } catch (err) {
       console.error(err);
       setErrorEnvio(err instanceof Error ? err.message : 'No se pudo enviar el archivo.');
+      return false;
     } finally {
       setSubiendoArchivo(false);
     }
+  };
+
+  // En una imagen el texto escrito va como leyenda debajo de la foto; en un
+  // PDF u otro archivo WhatsApp no muestra leyenda (el backend usa `texto`
+  // como nombre del archivo), así que el texto sale después como mensaje aparte.
+  const enviarAdjunto = async () => {
+    if (!adjunto || enviandoRef.current) return;
+    enviandoRef.current = true;
+    const { file, tipo } = adjunto;
+    const texto = borrador.trim();
+    const ok = await subirYEnviarArchivo(file, tipo, tipo === 'imagen' ? texto : undefined);
+    enviandoRef.current = false;
+    if (!ok) return;
+    setAdjunto(null);
+    if (tipo === 'imagen' || !texto) {
+      setBorrador('');
+      return;
+    }
+    await enviarTexto();
   };
 
   const enviarAudio = async (blob: Blob) => {
@@ -348,24 +403,27 @@ export default function Compositor({ mensajes, seleccionada, usuario, respuestas
 
   return (
     <div className="px-4 py-3.5 relative" style={{ backgroundColor: 'var(--surface)', borderTop: `1px solid ${BORDE}` }}>
-      <input ref={inputImagenRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && subirYEnviarArchivo(e.target.files[0], 'imagen')} />
-      <input ref={inputPdfRef} type="file" accept="application/pdf" hidden onChange={(e) => e.target.files?.[0] && subirYEnviarArchivo(e.target.files[0], 'pdf')} />
+      <input ref={inputImagenRef} type="file" accept="image/*" hidden onChange={(e) => elegirArchivo(e.target, 'imagen')} />
+      <input ref={inputPdfRef} type="file" accept="application/pdf" hidden onChange={(e) => elegirArchivo(e.target, 'pdf')} />
+      <input ref={inputAudioRef} type="file" accept="audio/*" hidden onChange={(e) => elegirArchivo(e.target, 'audio')} />
       <input
         ref={inputDocumentoRef}
         type="file"
         accept=".zip,.rar,.7z,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.pdf,.txt"
         hidden
-        onChange={(e) => e.target.files?.[0] && subirYEnviarArchivo(e.target.files[0], 'documento')}
+        onChange={(e) => elegirArchivo(e.target, 'documento')}
       />
       <div className="-mx-4 -mt-3.5 mb-3 empty:hidden">
         <ProgramarMensaje
           seleccionada={seleccionada}
           usuario={usuario}
           borrador={borrador}
+          adjunto={adjunto}
           abierto={mostrarProgramar}
           onCerrar={() => setMostrarProgramar(false)}
           onProgramado={() => {
             setBorrador('');
+            setAdjunto(null);
             setMostrarProgramar(false);
           }}
         />
@@ -402,6 +460,7 @@ export default function Compositor({ mensajes, seleccionada, usuario, respuestas
             {[
               { icono: ImageIcon, etiqueta: 'Imagen', color: BLUE, accion: () => inputImagenRef.current?.click() },
               { icono: FileText, etiqueta: 'PDF', color: BLUE, accion: () => inputPdfRef.current?.click() },
+              { icono: Mic, etiqueta: 'Audio', color: BLUE, accion: () => inputAudioRef.current?.click() },
               { icono: File, etiqueta: 'Otro archivo', color: BLUE, accion: () => inputDocumentoRef.current?.click() },
               { icono: Bot, etiqueta: 'Mandar respuesta automática', color: BLUE, accion: () => { setMostrarBots(true); setMostrarRespuestas(false); setMostrarProgramar(false); } },
               { icono: CalendarClock, etiqueta: 'Programar mensaje', color: 'var(--warn)', accion: () => { setMostrarProgramar(true); setMostrarRespuestas(false); setMostrarBots(false); } },
@@ -463,6 +522,28 @@ export default function Compositor({ mensajes, seleccionada, usuario, respuestas
           </button>
         ))}
       </div>
+      {adjunto && !esNota && (
+        <div className="flex items-center gap-2.5 rounded-xl p-2 mb-2" style={{ backgroundColor: 'var(--surface-2)', border: `1px solid ${BORDE}` }}>
+          {adjunto.vistaPrevia ? (
+            <img src={adjunto.vistaPrevia} alt="" className="rounded-lg object-cover shrink-0" style={{ width: 44, height: 44 }} />
+          ) : (
+            <span className="rounded-lg flex items-center justify-center shrink-0" style={{ width: 44, height: 44, backgroundColor: 'var(--surface)', color: BLUE }}>
+              {adjunto.tipo === 'pdf' ? <FileText size={20} /> : <File size={20} />}
+            </span>
+          )}
+          <div className="flex-1 min-w-0 flex flex-col">
+            <span className="text-[13px] font-semibold truncate" style={{ color: 'var(--fg)' }}>{adjunto.file.name}</span>
+            <span className="text-[11.5px]" style={{ color: 'var(--fg-3)' }}>
+              {subiendoArchivo
+                ? 'Enviando…'
+                : `${formatoTamano(adjunto.file.size)} · Enter para enviar${adjunto.tipo === 'imagen' ? ' · lo que escribas va como leyenda' : ''}`}
+            </span>
+          </div>
+          <button onClick={() => setAdjunto(null)} disabled={subiendoArchivo} aria-label="Quitar archivo adjunto" className="rounded-full flex items-center justify-center shrink-0" style={{ width: 30, height: 30, color: TEXTO_SECUNDARIO }}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
       <div className="flex items-center gap-1.5 rounded-full pl-1.5 pr-1.5 py-1" style={{ border: `1px solid ${esNota ? 'var(--warn)' : 'var(--line)'}`, backgroundColor: esNota ? 'var(--warn-soft)' : 'var(--surface-2)' }}>
         {grabando ? (
           <button onClick={() => detenerGrabacion(true)} aria-label="Cancelar grabación" className="rounded-lg flex items-center justify-center shrink-0" style={{ width: 34, height: 34 }}>
@@ -503,6 +584,10 @@ export default function Compositor({ mensajes, seleccionada, usuario, respuestas
                 }
               }}
               onKeyDown={(e) => {
+                if (e.key === 'Escape' && adjunto && !subiendoArchivo) {
+                  setAdjunto(null);
+                  return;
+                }
                 if (e.key !== 'Enter' || e.shiftKey) return;
                 e.preventDefault();
                 if (atajoActivo && sugerenciasAtajo.length > 0) {
@@ -511,7 +596,7 @@ export default function Compositor({ mensajes, seleccionada, usuario, respuestas
                   enviarMensaje();
                 }
               }}
-              placeholder={subiendoArchivo ? 'Subiendo archivo...' : esNota ? 'Nota interna: solo la ve tu equipo' : 'Escribe un mensaje'}
+              placeholder={subiendoArchivo ? 'Subiendo archivo...' : esNota ? 'Nota interna: solo la ve tu equipo' : adjunto ? (adjunto.tipo === 'imagen' ? 'Agrega una leyenda (opcional)' : 'Agrega un mensaje (opcional)') : 'Escribe un mensaje'}
               disabled={subiendoArchivo}
               className="flex-1 outline-none min-w-0 px-1 py-1 text-[13.5px] bg-transparent resize-none leading-relaxed"
               style={{ color: 'var(--fg)', maxHeight: 120 }}
@@ -525,8 +610,8 @@ export default function Compositor({ mensajes, seleccionada, usuario, respuestas
           <button onClick={() => detenerGrabacion(false)} aria-label="Detener y enviar audio" className="rounded-full flex items-center justify-center shrink-0 px-4" style={{ height: 34, backgroundColor: BLUE }}>
             <Send size={15} color="white" />
           </button>
-        ) : borrador.trim() || esNota ? (
-          <button onClick={enviarMensaje} aria-label={esNota ? 'Guardar nota' : 'Enviar'} className="rounded-full flex items-center justify-center shrink-0 px-4" style={{ height: 34, backgroundColor: esNota ? 'var(--warn)' : BLUE, opacity: borrador.trim() ? 1 : 0.5 }}>
+        ) : borrador.trim() || esNota || adjunto ? (
+          <button onClick={enviarMensaje} disabled={subiendoArchivo} aria-label={esNota ? 'Guardar nota' : adjunto ? 'Enviar archivo' : 'Enviar'} className="rounded-full flex items-center justify-center shrink-0 px-4" style={{ height: 34, backgroundColor: esNota ? 'var(--warn)' : BLUE, opacity: borrador.trim() || (adjunto && !esNota) ? 1 : 0.5 }}>
             <Send size={15} color="white" />
           </button>
         ) : (
