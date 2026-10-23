@@ -84,7 +84,41 @@ export interface ItemCotizacion {
   imagen?: string | null;
   /** Piezas rectangulares a cortar (cm), para la vista previa de la plancha. */
   cortes?: { ancho: number; alto: number; cantidad: number }[];
+  /** Archivo de corte (DXF, SVG o PLT) del que salen metros, minutos y piezas. */
+  archivo?: ArchivoCorte | null;
 }
+
+export interface ArchivoCorte {
+  nombre: string;
+  /** Archivo guardado para que el taller lo descargue. */
+  url: string | null;
+  /** Unidad en la que se interpreta el archivo (se puede corregir a mano). */
+  unidad: 'mm' | 'cm' | 'in';
+  unidadDetectada: 'mm' | 'cm' | 'in';
+  /** Medidas tal como se leyeron con la unidad detectada, en mm. */
+  largoMm: number;
+  recorridoMm: number;
+  contornos: number;
+  anchoMm: number;
+  altoMm: number;
+  piezasMm: { ancho: number; alto: number; cantidad: number }[];
+}
+
+// Supuestos para estimar el tiempo de RDWorks desde el archivo: el cabezal se
+// mueve en vacío a 200 mm/s y cada figura suma ~0,3 s de arranque y frenado.
+const TRASLADO_MM_S = 200;
+const PAUSA_FIGURA_S = 0.3;
+const MM_POR_UNIDAD = { mm: 1, cm: 10, in: 25.4 } as const;
+
+export const escalaArchivo = (a: ArchivoCorte) => MM_POR_UNIDAD[a.unidad] / MM_POR_UNIDAD[a.unidadDetectada];
+export const metrosArchivo = (a: ArchivoCorte) => Math.round((a.largoMm * escalaArchivo(a)) / 10) / 100;
+export const minutosArchivo = (a: ArchivoCorte, velocidad: number) =>
+  ((a.largoMm * escalaArchivo(a)) / velocidad + (a.recorridoMm * escalaArchivo(a)) / TRASLADO_MM_S + a.contornos * PAUSA_FIGURA_S) / 60;
+/** Piezas del archivo en cm, para la plancha. */
+export const piezasArchivo = (a: ArchivoCorte) => {
+  const k = escalaArchivo(a) / 10;
+  return a.piezasMm.map((p) => ({ ancho: Math.round(p.ancho * k * 10) / 10, alto: Math.round(p.alto * k * 10) / 10, cantidad: p.cantidad }));
+};
 
 export interface DatosCotizacion {
   items: ItemCotizacion[];
@@ -210,7 +244,7 @@ export function calcularItem(item: ItemCotizacion, t: Tarifas): CalculoItem {
   let corte = 0;
   let detalleCorte = '';
   if (m.corte === 'minuto') {
-    minutos = item.minutosRdworks ?? (item.metros * 1000) / (m.velocidad || 10) / 60;
+    minutos = item.minutosRdworks ?? (item.archivo && Math.abs(item.metros - metrosArchivo(item.archivo)) < 0.01 ? minutosArchivo(item.archivo, m.velocidad || 10) : (item.metros * 1000) / (m.velocidad || 10) / 60);
     corte = minutos * t.laserMinuto;
     detalleCorte = `${formatoNumero(minutos, 1)} min × Bs ${formatoNumero(t.laserMinuto)}/min`;
   } else if (m.corte === 'espesor') {
@@ -287,11 +321,12 @@ export function textoOrdenCorte(numero: string, cliente: string, d: DatosCotizac
       `   Material: ${m ? nombreMaterial(m) : '—'}`,
       `   Lámina: ${item.lamina === 'ninguna' ? 'la trae el cliente' : `${item.laminas} × ${LAMINAS[item.lamina].nombre.toLowerCase()} (${LAMINAS[item.lamina].medida})`}`,
       `   Máquina: ${item.maquina === 'laser' ? 'láser' : 'CNC router'}`,
-      `   Corte: ${formatoNumero(item.metros, 1)} m${ci.minutos !== null ? ` · ${formatoNumero(ci.minutos, 1)} min ${item.minutosRdworks !== null ? '(RDWorks)' : `(estimado a ${m?.velocidad} mm/s)`}` : ''}`,
+      `   Corte: ${formatoNumero(item.metros, 1)} m${ci.minutos !== null ? ` · ${formatoNumero(ci.minutos, 1)} min ${item.minutosRdworks !== null ? '(RDWorks)' : `(estimado ${item.archivo && Math.abs(item.metros - metrosArchivo(item.archivo)) < 0.01 ? 'del archivo ' : ''}a ${m?.velocidad} mm/s)`}` : ''}`,
       ...(item.grabadoMin ? [`   Grabado relleno: ${item.grabadoMin} min`] : []),
       ...(item.cortes?.some((p) => p.ancho > 0 && p.alto > 0) ? [`   Medidas: ${item.cortes.filter((p) => p.ancho > 0 && p.alto > 0).map((p) => `${formatoNumero(p.ancho, 1)} × ${formatoNumero(p.alto, 1)} cm × ${p.cantidad}`).join(', ')}`] : []),
       `   Piezas: ${item.piezas}`,
       ...(item.imagen ? [`   Referencia: ${item.imagen}`] : []),
+      ...(item.archivo?.url ? [`   Archivo: ${item.archivo.url}`] : []),
     ].join('\n');
   });
   return [`*Orden de corte ${numero.replace('COT', 'OC')}*`, `Cliente: ${cliente}`, '', ...bloques, ...(d.notas.trim() ? ['', `Notas: ${d.notas.trim()}`] : [])].join('\n');

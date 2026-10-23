@@ -46,3 +46,16 @@ En **Catálogo y tarifas → Enviar cotizaciones desde** se elige la línea corp
 - Al **enviar** la cotización, el contacto pasa a la etapa que tenga "negoci" en el nombre (En Negociación) y se crea una oportunidad "COT-0001 · Cliente" con el monto. Si se reenvía, se actualiza esa misma oportunidad.
 - **Pagó anticipo** pasa el contacto a la etapa de venta ganada y cierra la oportunidad como ganada; **Rechazada** la pasa a venta perdida.
 - Si la base todavía no tiene la tabla `oportunidades` (versión 6 del curso), el monto se anota directo en el contacto.
+
+## Archivo de corte (DXF, SVG o PLT)
+
+En cada ítem, **Archivo de corte** lee el diseño en el navegador y completa solo:
+
+- **Metros de corte**: el largo de todas las líneas del archivo.
+- **Minutos**: corte a la velocidad del material + traslados del cabezal entre figuras (a 200 mm/s) + ~0,3 s por figura. Es una estimación: si RDWorks da otro número, se escribe en «Minutos RDWorks» y manda ese.
+- **Piezas**: cada contorno cerrado que no es agujero de otro, con su ancho y alto. Van a «Piezas a cortar» y a la vista de la plancha.
+- **Lámina y cantidad**: prueba cuarta, media y entera y elige la más barata donde entran las piezas (por su rectángulo, así que es un cálculo conservador).
+
+El archivo queda guardado en `media/cotizaciones/{empresa}/archivos/` y la orden de corte tiene el enlace para descargarlo.
+
+Formatos: DXF de texto (el que importa RDWorks), SVG o PLT, exportados desde Corel o Illustrator con el texto convertido a curvas. CDR, AI y RLD no se pueden leer. Si el DXF no dice su unidad se toma en mm; el selector «El archivo está en» la corrige.
