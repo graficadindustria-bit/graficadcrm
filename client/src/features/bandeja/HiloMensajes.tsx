@@ -112,12 +112,13 @@ export default function HiloMensajes({
       <div className="px-3 md:px-[18px] flex items-center gap-3" style={{ minHeight: 64, backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--line)' }}>
         {esMovil && <button onClick={onVolver} aria-label="Volver a la lista" className="p-1 -ml-1"><ArrowLeft size={20} color="var(--fg)" /></button>}
         <span
-          className="shrink-0 rounded-full flex items-center justify-center font-semibold text-[14px]"
+          onClick={onTogglePanelContacto}
+          className="shrink-0 rounded-full flex items-center justify-center font-semibold text-[14px] cursor-pointer"
           style={{ width: 40, height: 40, backgroundColor: iniciales ? 'var(--accent-soft)' : 'var(--surface-2)', color: iniciales ? 'var(--accent)' : 'var(--fg-3)', border: iniciales ? 'none' : '1px solid var(--line)' }}
         >
           {iniciales || <User size={19} aria-label="Sin nombre" />}
         </span>
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 cursor-pointer" onClick={onTogglePanelContacto} title="Ver la ficha del cliente">
           <div className="text-[16px] font-bold leading-tight break-words" style={{ color: 'var(--fg)' }} title={nombreMostrado}>{nombreMostrado}</div>
           {conNombre && <div className="text-[12.5px] leading-tight" style={{ color: 'var(--fg-2)', fontVariantNumeric: 'tabular-nums' }}>{formatoTelefono(seleccionada.contacto_telefono)}</div>}
           <div className="flex items-center gap-x-1.5 flex-wrap text-[12.5px]" style={{ color: 'var(--fg-2)' }}>

@@ -12,8 +12,23 @@ interface OportunidadesProps {
 
 type FiltroFecha = 'todas' | 'hoy' | '7' | '30';
 
+// Rangos de probabilidad de cierre para el filtro (mínimo y máximo, ambos incluidos).
+const RANGOS_CIERRE: Record<string, { texto: string; min: number; max: number }> = {
+  todos: { texto: 'Cierre: todos', min: 0, max: 100 },
+  alta: { texto: 'Cierre: 70% o más', min: 70, max: 100 },
+  media: { texto: 'Cierre: 30% a 69%', min: 30, max: 69 },
+  baja: { texto: 'Cierre: menos de 30%', min: 0, max: 29 },
+};
+
 // Una oportunidad con esta probabilidad o más está "cerca de cerrar".
 const UMBRAL_POR_CERRAR = 90;
+
+// Una oportunidad es un contacto con algo de venta en marcha: caliente, con
+// probabilidad de cierre o con un monto cargado. Así aparecen también las que se
+// crean desde la ficha o al mover un contacto de etapa, no solo las muy calientes.
+const FILTRO_OPORTUNIDAD = 'temperatura.eq.caliente,probabilidad_cierre.gt.0,valor_estimado.gt.0';
+const esOportunidadAbierta = (c: Contacto) =>
+  c.temperatura === 'caliente' || (c.probabilidad_cierre ?? 0) > 0 || (c.valor_estimado ?? 0) > 0;
 
 interface ConversacionResumen {
   contacto_telefono: string;
@@ -45,6 +60,7 @@ export default function Oportunidades({ onAbrirChat }: OportunidadesProps) {
   const [vista, setVista] = useState<'tarjetas' | 'lista' | 'etapas'>('tarjetas');
   const [filtroFecha, setFiltroFecha] = useState<FiltroFecha>('todas');
   const [filtroSeguimiento, setFiltroSeguimiento] = useState(0);
+  const [filtroCierre, setFiltroCierre] = useState('todos');
   const [soloPorCerrar, setSoloPorCerrar] = useState(false);
   const [agregando, setAgregando] = useState(false);
   const [candidatos, setCandidatos] = useState<Contacto[]>([]);
@@ -53,7 +69,7 @@ export default function Oportunidades({ onAbrirChat }: OportunidadesProps) {
   useEffect(() => {
     const cargar = async () => {
       const [{ data: cont }, { data: etp }, { data: conv }, { data: usu }, { data: asoc }] = await Promise.all([
-        supabase.from('contactos').select('*').or('temperatura.eq.caliente,probabilidad_cierre.gte.70').returns<Contacto[]>(),
+        supabase.from('contactos').select('*').or(FILTRO_OPORTUNIDAD).returns<Contacto[]>(),
         supabase.from('etapas_venta').select('*').order('orden').returns<EtapaVenta[]>(),
         supabase.from('conversaciones').select('contacto_telefono, agente_asignado_id, ultima_actividad').order('ultima_actividad', { ascending: false }).returns<ConversacionResumen[]>(),
         supabase.from('usuarios').select('id, nombre').returns<{ id: string; nombre: string }[]>(),
@@ -80,7 +96,7 @@ export default function Oportunidades({ onAbrirChat }: OportunidadesProps) {
     setAgregando(true);
     setBusquedaCandidato('');
     const { data } = await supabase.from('contactos').select('*').order('actualizado_en', { ascending: false }).limit(500).returns<Contacto[]>();
-    setCandidatos((data || []).filter((c) => c.temperatura !== 'caliente' && (c.probabilidad_cierre ?? 0) < 70));
+    setCandidatos((data || []).filter((c) => !esOportunidadAbierta(c)));
   };
 
   const agregarOportunidad = async (c: Contacto) => {
@@ -110,11 +126,16 @@ export default function Oportunidades({ onAbrirChat }: OportunidadesProps) {
       .filter((c) => new Date(c.creado_en).getTime() >= desde)
       .filter((c) => !filtroSeguimiento || diasSinSeguimiento(c) >= filtroSeguimiento)
       .filter((c) => !soloPorCerrar || (c.probabilidad_cierre ?? 0) >= UMBRAL_POR_CERRAR)
+      .filter((c) => {
+        const { min, max } = RANGOS_CIERRE[filtroCierre];
+        const p = c.probabilidad_cierre ?? 0;
+        return p >= min && p <= max;
+      })
       .filter((c) => !q || (c.nombre || '').toLowerCase().includes(q) || c.telefono.includes(q) || (c.producto_interes || '').toLowerCase().includes(q))
       .sort((a, b) => (b.temperatura === 'caliente' ? 1000 : 0) + (b.probabilidad_cierre ?? 0) - ((a.temperatura === 'caliente' ? 1000 : 0) + (a.probabilidad_cierre ?? 0)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [abiertas, conversaciones, busqueda, filtroFecha, filtroSeguimiento, soloPorCerrar]);
+  }, [abiertas, conversaciones, busqueda, filtroFecha, filtroSeguimiento, filtroCierre, soloPorCerrar]);
 
   const tarjeta = (c: Contacto) => {
       const conv = conversaciones[c.telefono];
@@ -170,7 +191,7 @@ export default function Oportunidades({ onAbrirChat }: OportunidadesProps) {
     <div className="flex-1 min-w-0 overflow-y-auto">
       <div className="aparecer px-4 md:px-7 py-5 md:py-6 flex flex-col gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <EncabezadoPagina titulo="Oportunidades" subtitulo="Leads calientes o con 70% o más de probabilidad de cierre. Atiéndelos primero." />
+          <EncabezadoPagina titulo="Oportunidades" subtitulo="Contactos con una venta en marcha: calientes, con probabilidad de cierre o con un monto. Atiéndelos primero." />
           <Boton variante="primario" icono={Plus} onClick={abrirAgregar}>Agregar contacto</Boton>
         </div>
 
@@ -208,6 +229,9 @@ export default function Oportunidades({ onAbrirChat }: OportunidadesProps) {
             <option value="7">Creado: últimos 7 días</option>
             <option value="30">Creado: últimos 30 días</option>
           </select>
+          <select value={filtroCierre} onChange={(e) => setFiltroCierre(e.target.value)} aria-label="Filtrar por porcentaje de cierre" className="rounded-lg px-2.5 text-[12.5px] outline-none cursor-pointer" style={{ height: 36, border: `1px solid ${filtroCierre !== 'todos' ? 'var(--accent)' : 'var(--line)'}`, backgroundColor: 'var(--surface)', color: 'var(--fg)' }}>
+            {Object.entries(RANGOS_CIERRE).map(([id, r]) => <option key={id} value={id}>{r.texto}</option>)}
+          </select>
           <select value={filtroSeguimiento} onChange={(e) => setFiltroSeguimiento(Number(e.target.value))} aria-label="Filtrar por días sin seguimiento" className="rounded-lg px-2.5 text-[12.5px] outline-none cursor-pointer" style={{ height: 36, border: `1px solid ${filtroSeguimiento ? 'var(--warn)' : 'var(--line)'}`, backgroundColor: 'var(--surface)', color: 'var(--fg)' }}>
             <option value={0}>Seguimiento: todos</option>
             <option value={3}>Sin seguimiento 3+ días</option>
@@ -235,7 +259,7 @@ export default function Oportunidades({ onAbrirChat }: OportunidadesProps) {
           <div className="text-[13px]" style={{ color: 'var(--fg-3)' }}>Cargando…</div>
         ) : lista.length === 0 ? (
           <Tarjeta className="flex">
-            <EstadoVacio icono={Flame} titulo={abiertas.length === 0 ? 'Aún no hay oportunidades' : 'Ninguna oportunidad coincide con los filtros'} texto={abiertas.length === 0 ? 'Marca un contacto como "Caliente" o dale 70% o más de probabilidad de cierre en su ficha, y aparecerá aquí.' : 'Cambia o quita algún filtro para verlas.'} />
+            <EstadoVacio icono={Flame} titulo={abiertas.length === 0 ? 'Aún no hay oportunidades' : 'Ninguna oportunidad coincide con los filtros'} texto={abiertas.length === 0 ? 'Carga un monto o una probabilidad de cierre en la pestaña Venta de su ficha, márcalo como "Caliente" o usa «Agregar contacto», y aparecerá aquí.' : 'Cambia o quita algún filtro para verlas.'} />
           </Tarjeta>
         ) : vista === 'tarjetas' ? (
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>

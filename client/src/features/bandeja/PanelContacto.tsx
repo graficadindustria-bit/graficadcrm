@@ -77,6 +77,7 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
   const [nombreGuardado, setNombreGuardado] = useState(false);
   const [errorNombre, setErrorNombre] = useState('');
   const [valorBorrador, setValorBorrador] = useState('');
+  const [productoBorrador, setProductoBorrador] = useState('');
   const [probabilidadBorrador, setProbabilidadBorrador] = useState('');
   const [oportunidadGuardada, setOportunidadGuardada] = useState(false);
   const [errorOportunidad, setErrorOportunidad] = useState('');
@@ -84,6 +85,7 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
   useEffect(() => {
     setNombreBorrador(contacto?.nombre || '');
     setValorBorrador(contacto?.valor_estimado != null ? String(contacto.valor_estimado) : '');
+    setProductoBorrador(contacto?.producto_interes || '');
     setProbabilidadBorrador(contacto?.probabilidad_cierre != null ? String(contacto.probabilidad_cierre) : '');
   }, [contacto?.id]);
 
@@ -206,7 +208,8 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
     setErrorOportunidad('');
     const okValor = await actualizarCampo('valor_estimado', valorBorrador.trim() === '' ? null : String(Number(valorBorrador)));
     const okProbabilidad = await actualizarCampo('probabilidad_cierre', probabilidadBorrador.trim() === '' ? null : String(Math.min(100, Math.max(0, Number(probabilidadBorrador)))));
-    if (!okValor || !okProbabilidad) {
+    const okProducto = await actualizarCampo('producto_interes', productoBorrador.trim() === '' ? null : productoBorrador.trim());
+    if (!okValor || !okProbabilidad || !okProducto) {
       setErrorOportunidad('No se pudo guardar — no tenés permiso para editar este contacto.');
       return;
     }
@@ -352,16 +355,6 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
                 {etapas.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
               </select>
             </label>
-            <label className="flex flex-col gap-1.5 text-xs font-semibold" style={{ color: 'var(--fg-2)' }}>
-              Interés
-              <input
-                defaultValue={contacto.producto_interes || ''}
-                onBlur={(e) => actualizarCampo('producto_interes', e.target.value)}
-                placeholder="Ej: Club VIP, Trading desde Cero..."
-                className="rounded-lg px-2.5 outline-none font-normal text-[13.5px]"
-                style={{ height: 36, border: `1px solid ${BORDE}`, color: TEXTO_PRIMARIO, backgroundColor: 'var(--surface-2)' }}
-              />
-            </label>
             <div className="flex items-center justify-between text-[13px]" style={{ color: 'var(--fg-2)' }}>
               <span>Asignado a</span>
               <b style={{ color: 'var(--fg)' }}>{asignadoA || 'Sin asignar'}</b>
@@ -442,6 +435,16 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
 
           {pestana === 'venta' && (<>
           <Card titulo="Oportunidad de venta">
+            <label className="flex flex-col gap-1.5 text-xs font-semibold" style={{ color: 'var(--fg-2)' }}>
+              Producto o servicio
+              <input
+                value={productoBorrador}
+                onChange={(e) => setProductoBorrador(e.target.value)}
+                placeholder="Ej: Club VIP, instalación de gas..."
+                className="rounded-lg px-2.5 outline-none font-normal text-[13.5px]"
+                style={{ height: 36, border: `1px solid ${BORDE}`, color: TEXTO_PRIMARIO }}
+              />
+            </label>
             <div className="grid grid-cols-2 gap-2.5">
               <label className="flex flex-col gap-1.5 text-xs font-semibold" style={{ color: 'var(--fg-2)' }}>
                 Monto (Bs.)
