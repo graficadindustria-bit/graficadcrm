@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../lib/AuthContext';
 import { BORDE, BORDE_FILA, NAVY, SOMBRA_CARD, TEAL, TEXTO_PRIMARIO, TEXTO_SECUNDARIO, TEXTO_TERCIARIO, colorAvatar } from '../../lib/tema';
-import type { Tarea } from '../../lib/tipos';
+import type { Tarea, TareaItem } from '../../lib/tipos';
+import NuevaActividad from './NuevaActividad';
 
 type Categoria = 'atrasada' | 'hoy' | 'semana' | 'mas_adelante' | 'sin_fecha';
 type Alcance = 'todas' | 'atrasada' | 'hoy' | 'semana';
@@ -19,7 +20,7 @@ function categoria(t: Tarea, ahora: Date): Categoria {
 }
 
 function nombreContacto(t: Tarea) {
-  return t.contactos?.nombre || t.contactos?.telefono || 'Contacto';
+  return t.contactos?.nombre || t.contactos?.telefono || 'Actividad del equipo';
 }
 
 function inicialesContacto(t: Tarea) {
@@ -56,6 +57,9 @@ export default function Agenda() {
   const [alcance, setAlcance] = useState<Alcance>('todas');
   const [responsable, setResponsable] = useState('todos');
   const [vista, setVista] = useState<Vista>('agenda');
+  const [items, setItems] = useState<Record<string, TareaItem[]>>({});
+  const [creando, setCreando] = useState(false);
+  const esAdmin = usuario?.rol === 'supervisor' || usuario?.rol === 'dueno';
   const [mesVisto, setMesVisto] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; });
 
   const cargar = async () => {
@@ -65,6 +69,10 @@ export default function Agenda() {
       .order('fecha', { ascending: true })
       .returns<Tarea[]>();
     setTareas(data || []);
+    const { data: filas } = await supabase.from('tarea_items').select('*').order('orden').returns<TareaItem[]>();
+    const porTarea: Record<string, TareaItem[]> = {};
+    (filas || []).forEach((i) => (porTarea[i.tarea_id] ||= []).push(i));
+    setItems(porTarea);
   };
 
   useEffect(() => {
@@ -72,6 +80,7 @@ export default function Agenda() {
     const canal = supabase
       .channel(`tareas-cambios-${Math.random()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tareas' }, () => cargar())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tarea_items' }, () => cargar())
       .subscribe();
     return () => {
       supabase.removeChannel(canal);
@@ -81,6 +90,11 @@ export default function Agenda() {
 
   const alternar = async (t: Tarea) => {
     await supabase.from('tareas').update({ completada: !t.completada }).eq('id', t.id);
+  };
+
+  const alternarItem = async (item: TareaItem) => {
+    setItems((prev) => ({ ...prev, [item.tarea_id]: (prev[item.tarea_id] || []).map((i) => (i.id === item.id ? { ...i, hecho: !i.hecho } : i)) }));
+    await supabase.from('tarea_items').update({ hecho: !item.hecho }).eq('id', item.id);
   };
 
   const ahora = new Date();
@@ -158,16 +172,27 @@ export default function Agenda() {
           <div className="flex-1 min-w-0 flex flex-col gap-1">
             <span className="text-[13.5px] font-semibold truncate" style={{ color: isDone ? 'var(--fg-3)' : TEXTO_PRIMARIO, textDecoration: isDone ? 'line-through' : 'none' }}>{t.titulo}</span>
             <div className="flex items-center gap-1.5 min-w-0">
-              <div className="w-[19px] h-[19px] rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{ backgroundColor: colorAvatar(t.contacto_id) }}>{inicialesContacto(t)}</div>
+              <div className="w-[19px] h-[19px] rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{ backgroundColor: colorAvatar(t.contacto_id || t.id) }}>{inicialesContacto(t)}</div>
               <span className="text-xs truncate" style={{ color: TEXTO_SECUNDARIO }}>{nombreContacto(t)}</span>
             </div>
+            {t.descripcion && <span className="text-xs" style={{ color: TEXTO_SECUNDARIO }}>{t.descripcion}</span>}
+            {(items[t.id] || []).length > 0 && (
+              <div className="flex flex-col gap-1 mt-1">
+                <span className="text-[11px] font-semibold" style={{ color: TEXTO_TERCIARIO }}>Checklist {(items[t.id] || []).filter((i) => i.hecho).length}/{(items[t.id] || []).length}</span>
+                {(items[t.id] || []).map((i) => (
+                  <label key={i.id} className="flex items-center gap-2 text-[12.5px] cursor-pointer" style={{ color: i.hecho ? 'var(--fg-3)' : TEXTO_PRIMARIO, textDecoration: i.hecho ? 'line-through' : 'none' }}>
+                    <input type="checkbox" checked={i.hecho} onChange={() => alternarItem(i)} />{i.texto}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <span className="text-[13.5px] font-semibold truncate" style={{ color: isDone ? 'var(--fg-3)' : TEXTO_PRIMARIO, textDecoration: isDone ? 'line-through' : 'none' }}>{t.titulo}</span>
         )}
         {variante === 'lista' && (
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-[9.5px] font-bold text-white shrink-0" style={{ backgroundColor: colorAvatar(t.contacto_id) }}>{inicialesContacto(t)}</div>
+            <div className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-[9.5px] font-bold text-white shrink-0" style={{ backgroundColor: colorAvatar(t.contacto_id || t.id) }}>{inicialesContacto(t)}</div>
             <span className="text-xs truncate" style={{ color: TEXTO_PRIMARIO }}>{nombreContacto(t)}</span>
           </div>
         )}
@@ -200,6 +225,11 @@ export default function Agenda() {
               </button>
             ))}
           </div>
+          {esAdmin && (
+            <button onClick={() => setCreando(true)} className="flex items-center gap-1.5 text-[13px] font-semibold rounded-lg px-3.5 shrink-0" style={{ height: 36, backgroundColor: TEAL, color: 'var(--accent-fg)' }}>
+              <Plus size={14} />Nueva actividad
+            </button>
+          )}
           <button onClick={() => setSoloPendientes(!soloPendientes)} className="flex items-center gap-2.5 shrink-0">
             <span className="text-[13px] font-semibold" style={{ color: 'var(--fg)' }}>Solo pendientes</span>
             <span className="rounded-full relative transition-colors" style={{ width: 38, height: 22, backgroundColor: soloPendientes ? TEAL : 'var(--line-2)' }}>
@@ -339,6 +369,7 @@ export default function Agenda() {
           </div>
         )}
       </div>
+      {creando && <NuevaActividad onCerrar={() => setCreando(false)} onCreada={() => { setCreando(false); cargar(); }} />}
     </div>
   );
 }

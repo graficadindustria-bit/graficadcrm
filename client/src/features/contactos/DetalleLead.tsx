@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../lib/AuthContext';
 import { useContacto } from '../bandeja/hooks/useContacto';
 import { useEtapasVenta } from '../bandeja/hooks/useEtapasVenta';
+import { useCambioEtapa } from '../pipeline/useCambioEtapa';
 import { tinte, AMBER, BLUE, BORDE, FONDO_CONTENIDO, SOMBRA_CARD, TEAL, TEMPERATURA_STYLE, TEXTO_PRIMARIO, TEXTO_SECUNDARIO, TEXTO_TERCIARIO, colorAvatar, colorEtiquetaWhatsapp } from '../../lib/tema';
 import { FormWhatsapp } from './EscribirWhatsapp';
 import type { Contacto, EtiquetaWhatsapp, Nota, RespuestaRapida, Tarea, Temperatura } from '../../lib/tipos';
@@ -43,6 +44,7 @@ export default function DetalleLead({ telefono: telefonoCrudo, telefonoChat, lin
   const { usuario } = useAuth();
   const { contacto, cargando, setContacto } = useContacto(telefono, usuario?.empresa_id);
   const etapas = useEtapasVenta(usuario?.empresa_id);
+  const { cambiarEtapa, dialogo: dialogoEtapa } = useCambioEtapa(etapas);
   const [notas, setNotas] = useState<Nota[]>([]);
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [etiquetas, setEtiquetas] = useState<EtiquetaWhatsapp[]>([]);
@@ -178,7 +180,10 @@ export default function DetalleLead({ telefono: telefonoCrudo, telefonoChat, lin
           </button>
         )}
         <button
-          onClick={() => actualizarCampo('etapa_id', etapas.find((e) => e.tipo === 'perdida')?.id || contacto.etapa_id || '')}
+          onClick={() => {
+            const perdida = etapas.find((e) => e.tipo === 'perdida');
+            if (perdida) cambiarEtapa(contacto.id, perdida.id, (cambios) => setContacto((prev) => (prev ? { ...prev, ...cambios } : prev)));
+          }}
           className="text-[12.5px] font-semibold rounded-lg px-3 py-1.5"
           style={{ border: `1px solid ${BORDE}`, color: TEXTO_SECUNDARIO }}
         >
@@ -383,6 +388,7 @@ export default function DetalleLead({ telefono: telefonoCrudo, telefonoChat, lin
           )}
         </div>
       </div>
+      {dialogoEtapa}
     </div>
   );
 }

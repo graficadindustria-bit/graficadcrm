@@ -95,27 +95,8 @@ EOF
     echo "  ⚠ No se pudo sacar el SSL de $SITIO (¿el DNS ya apunta a $IP?). Reintentá con: certbot --nginx -d $SITIO --redirect"
   fi
 
-  # Ficha para el estudiante.
-  mkdir -p /root/fichas
-  {
-    echo "=============================================="
-    echo " FICHA DE $NOMBRE"
-    echo " Tu CRM: https://$SITIO"
-    echo "=============================================="
-    echo
-    echo "Cargá estos 3 secretos en tu repo de GitHub:"
-    echo "Settings → Secrets and variables → Actions → New repository secret"
-    echo
-    echo "--- Nombre: DEPLOY_HOST ---"
-    echo "$IP"
-    echo
-    echo "--- Nombre: DEPLOY_USER ---"
-    echo "$USUARIO"
-    echo
-    echo "--- Nombre: DEPLOY_KEY  (copiá TODO, incluidas las líneas BEGIN y END) ---"
-    cat "/root/llaves/$NOMBRE"
-  } > "/root/fichas/$NOMBRE.txt"
-  chmod 600 "/root/fichas/$NOMBRE.txt"
+  # Ficha para el estudiante (el formato vive en ficha-estudiante).
+  /usr/local/sbin/ficha-estudiante "$NOMBRE" > /dev/null
   echo "  ✓ Ficha en /root/fichas/$NOMBRE.txt (puerto $PUERTO)"
 }
 

@@ -8,6 +8,7 @@ import VistaEmbudo from './VistaEmbudo';
 import VistaLista from './VistaLista';
 import GestionEtapas from './GestionEtapas';
 import DetalleLead from '../contactos/DetalleLead';
+import { useCambioEtapa } from './useCambioEtapa';
 
 interface PipelineProps {
   onAbrirChat: (telefono: string) => void;
@@ -64,11 +65,9 @@ export default function Pipeline({ onAbrirChat }: PipelineProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usuario?.empresa_id]);
 
-  const moverContacto = async (contactoId: string, etapaId: string) => {
-    const ahora = new Date().toISOString();
-    setContactos((prev) => prev.map((c) => (c.id === contactoId ? { ...c, etapa_id: etapaId, etapa_actualizada_en: ahora } : c)));
-    await supabase.from('contactos').update({ etapa_id: etapaId, etapa_actualizada_en: ahora }).eq('id', contactoId);
-  };
+  const { cambiarEtapa, dialogo } = useCambioEtapa(etapas);
+  const moverContacto = (contactoId: string, etapaId: string) =>
+    cambiarEtapa(contactoId, etapaId, (cambios) => setContactos((prev) => prev.map((c) => (c.id === contactoId ? { ...c, ...cambios } : c))));
 
   // Busca por nombre (sin tildes ni mayúsculas) o por número (solo dígitos).
   const quitarTildes = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -152,6 +151,7 @@ export default function Pipeline({ onAbrirChat }: PipelineProps) {
         )}
       </div>
 
+      {dialogo}
       {mostrarGestionEtapas && <GestionEtapas etapas={etapas} onClose={() => setMostrarGestionEtapas(false)} />}
     </div>
   );

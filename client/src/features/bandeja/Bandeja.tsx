@@ -372,6 +372,7 @@ export default function Bandeja() {
       etiquetasPorTelefono={conv.etiquetasPorTelefono}
       contactoPorTelefono={conv.contactoPorTelefono}
       pendientes={conv.pendientes}
+      ultimoDelCliente={conv.ultimoDelCliente}
       esVendedor={esVendedor}
       miId={usuario.id}
       seleccionadaId={esMovil ? null : seleccionada?.id ?? null}
@@ -399,6 +400,8 @@ export default function Bandeja() {
       onReclamar={() => conv.reclamar(seleccionada)}
       onLiberar={() => conv.liberar(seleccionada)}
       onCotizar={() => { setCotizarPara(seleccionada); setSeccion('cotizador'); }}
+      agentes={Object.entries(agentes).map(([id, nombre]) => ({ id, nombre }))}
+      onTransferir={(agenteId) => conv.transferir(seleccionada, agenteId)}
       onVolver={esMovil ? () => setSeleccionada(null) : undefined}
     />
   );

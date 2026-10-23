@@ -33,6 +33,9 @@ export function useConversaciones(usuario: Usuario | null) {
   const [ultimosMensajes, setUltimosMensajes] = useState<Record<string, UltimoMensaje>>({});
   const [etiquetasPorTelefono, setEtiquetasPorTelefono] = useState<Record<string, EtiquetaWhatsapp[]>>({});
   const [pendientes, setPendientes] = useState<Record<string, number>>({});
+  // Cuándo escribió el cliente por última vez: WhatsApp solo deja responder
+  // con texto libre hasta 24 h después.
+  const [ultimoDelCliente, setUltimoDelCliente] = useState<Record<string, string>>({});
   const [contactoPorTelefono, setContactoPorTelefono] = useState<Record<string, ResumenContacto>>({});
 
   const cargarLineas = useCallback(async () => {
@@ -69,14 +72,17 @@ export function useConversaciones(usuario: Usuario | null) {
       // que la lista muestra como globo azul (no hay "leído" real en el modelo).
       const cuenta: Record<string, number> = {};
       const cortada = new Set<string>();
+      const delCliente: Record<string, string> = {};
       (msjs || []).forEach((m) => {
         if (!ultimos[m.conversacion_id]) ultimos[m.conversacion_id] = m;
+        if (m.remitente === 'cliente' && !delCliente[m.conversacion_id]) delCliente[m.conversacion_id] = m.creado_en;
         if (cortada.has(m.conversacion_id)) return;
         if (m.remitente === 'cliente') cuenta[m.conversacion_id] = (cuenta[m.conversacion_id] || 0) + 1;
         else cortada.add(m.conversacion_id);
       });
       setUltimosMensajes(ultimos);
       setPendientes(cuenta);
+      setUltimoDelCliente(delCliente);
     }
   }, [usuario]);
 
@@ -134,6 +140,9 @@ export function useConversaciones(usuario: Usuario | null) {
   const liberar = async (c: Conversacion) => {
     await supabase.from('conversaciones').update({ agente_asignado_id: null }).eq('id', c.id);
   };
+  const transferir = async (c: Conversacion, agenteId: string) => {
+    await supabase.from('conversaciones').update({ agente_asignado_id: agenteId }).eq('id', c.id);
+  };
   const cambiarEstado = async (c: Conversacion, estado: EstadoConversacion) => {
     await supabase.from('conversaciones').update({ estado }).eq('id', c.id);
   };
@@ -152,9 +161,11 @@ export function useConversaciones(usuario: Usuario | null) {
     etiquetasPorTelefono,
     contactoPorTelefono,
     pendientes,
+    ultimoDelCliente,
     recargar: cargarConversaciones,
     reclamar,
     liberar,
+    transferir,
     cambiarEstado,
     resolver,
     colorLinea,

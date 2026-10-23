@@ -5,6 +5,10 @@ import { useAuth } from '../../lib/AuthContext';
 import { useContacto } from './hooks/useContacto';
 import { useEtapasVenta } from './hooks/useEtapasVenta';
 import { formatoTelefono, inicialesDe } from './utils';
+import { useCambioEtapa } from '../pipeline/useCambioEtapa';
+import FichaExtra from './FichaExtra';
+import ProgramadosContacto from './ProgramadosContacto';
+import { EVENTO_CAMBIO } from './ProgramarMensaje';
 import { tinte, TEAL, AMBER, TEMPERATURA_STYLE, BORDE, SOMBRA_CARD, TEXTO_PRIMARIO, TEXTO_SECUNDARIO, TEXTO_TERCIARIO, colorEtiquetaWhatsapp } from '../../lib/tema';
 import type { Contacto, EtiquetaWhatsapp, Nota, Tarea, Temperatura } from '../../lib/tipos';
 
@@ -43,11 +47,10 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
   const etapas = useEtapasVenta(usuario?.empresa_id);
   const [pestana, setPestana] = useState<'datos' | 'venta' | 'seguimiento'>('datos');
 
-  const cambiarEtapa = async (etapaId: string) => {
+  const { cambiarEtapa: aplicarEtapa, dialogo: dialogoEtapa } = useCambioEtapa(etapas);
+  const cambiarEtapa = (etapaId: string) => {
     if (!contacto) return;
-    const ahora = new Date().toISOString();
-    setContacto((prev) => (prev ? { ...prev, etapa_id: etapaId, etapa_actualizada_en: ahora } : prev));
-    await supabase.from('contactos').update({ etapa_id: etapaId, etapa_actualizada_en: ahora }).eq('id', contacto.id);
+    aplicarEtapa(contacto.id, etapaId, (cambios) => setContacto((prev) => (prev ? { ...prev, ...cambios } : prev)));
   };
   const [notas, setNotas] = useState<Nota[]>([]);
   const [tareas, setTareas] = useState<Tarea[]>([]);
@@ -57,6 +60,19 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
   const [notaBorrador, setNotaBorrador] = useState('');
   const [tareaTitulo, setTareaTitulo] = useState('');
   const [tareaFecha, setTareaFecha] = useState('');
+  // Al agendar con fecha se ofrece avisarle la cita al cliente por WhatsApp.
+  const [confirmarCita, setConfirmarCita] = useState(true);
+  const [textoCita, setTextoCita] = useState('');
+  const [avisoCita, setAvisoCita] = useState('');
+
+  useEffect(() => {
+    if (!tareaFecha) return setTextoCita('');
+    const cuando = new Date(tareaFecha);
+    const dia = cuando.toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long' });
+    const hora = cuando.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
+    const nombre = contacto?.nombre?.trim();
+    setTextoCita(`Hola${nombre ? ` ${nombre}` : ''}, te confirmamos tu cita para el ${dia} a las ${hora}. ¡Te esperamos! Si necesitas cambiarla, respóndenos por aquí.`);
+  }, [tareaFecha, contacto?.nombre]);
   const [nombreBorrador, setNombreBorrador] = useState('');
   const [nombreGuardado, setNombreGuardado] = useState(false);
   const [errorNombre, setErrorNombre] = useState('');
@@ -207,6 +223,7 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
 
   const agregarTarea = async () => {
     if (!tareaTitulo.trim() || !contacto) return;
+    setAvisoCita('');
     await supabase.from('tareas').insert({
       empresa_id: usuario!.empresa_id,
       contacto_id: contacto.id,
@@ -214,6 +231,36 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
       fecha: tareaFecha || null,
       asignado_a: usuario!.id,
     });
+    if (tareaFecha && confirmarCita && textoCita.trim()) {
+      // El mensaje sale por el programador (sale en menos de un minuto y queda
+      // visible en las cajitas de Mensajes programados).
+      const { data: conv } = lineaId
+        ? await supabase
+            .from('conversaciones')
+            .select('id, contacto_telefono')
+            .eq('linea_id', lineaId)
+            .like('contacto_telefono', `${telefono}%`)
+            .order('ultima_actividad', { ascending: false })
+            .limit(1)
+            .maybeSingle<{ id: string; contacto_telefono: string }>()
+        : { data: null };
+      if (conv) {
+        const { error: errorCita } = await supabase.from('mensajes_programados').insert({
+          conversacion_id: conv.id,
+          linea_id: lineaId,
+          telefono: conv.contacto_telefono,
+          tipo: 'texto',
+          contenido: textoCita.trim(),
+          enviar_en: new Date(Date.now() + 15000).toISOString(),
+          cancelar_si_responde: false,
+          creado_por: usuario!.id,
+        });
+        setAvisoCita(errorCita ? 'La tarea se guardó, pero no se pudo programar la confirmación.' : 'Tarea guardada. La confirmación de cita sale en unos segundos.');
+        window.dispatchEvent(new Event(EVENTO_CAMBIO));
+      } else {
+        setAvisoCita('Tarea guardada. No hay un chat con este cliente en esta línea, así que no se envió la confirmación.');
+      }
+    }
     setTareaTitulo('');
     setTareaFecha('');
     cargarTareas(contacto.id);
@@ -390,6 +437,7 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
               </div>
             </div>
           </Card>
+          <FichaExtra contacto={contacto} onFolio={(folio) => setContacto((prev) => (prev ? { ...prev, folio: folio || null } : prev))} />
           </>)}
 
           {pestana === 'venta' && (<>
@@ -432,6 +480,10 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
           </>)}
 
           {pestana === 'seguimiento' && (<>
+          <Card titulo="Mensajes programados">
+            {usuario && <ProgramadosContacto telefono={telefono} lineaId={lineaId} usuario={usuario} />}
+          </Card>
+
           <Card titulo="Seguimiento · Tareas">
             <div className="flex flex-col gap-1.5">
               {tareas.length === 0 && <div className="text-[11px]" style={{ color: TEXTO_TERCIARIO }}>Sin tareas todavía</div>}
@@ -466,6 +518,18 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
                 <Plus size={13} color="white" />
               </button>
             </div>
+            {tareaFecha && lineaId && (
+              <div className="flex flex-col gap-1.5 rounded-lg p-2" style={{ backgroundColor: 'var(--surface-2)', border: `1px solid ${BORDE}` }}>
+                <label className="flex items-center gap-2 text-[12px] font-semibold cursor-pointer" style={{ color: TEXTO_PRIMARIO }}>
+                  <input type="checkbox" checked={confirmarCita} onChange={(e) => setConfirmarCita(e.target.checked)} />
+                  Enviar confirmación de cita al cliente
+                </label>
+                {confirmarCita && (
+                  <textarea value={textoCita} onChange={(e) => setTextoCita(e.target.value)} rows={3} className="rounded-lg px-2 py-1.5 outline-none text-[12px] resize-none" style={{ border: `1px solid ${BORDE}`, color: TEXTO_PRIMARIO, backgroundColor: 'var(--surface)' }} />
+                )}
+              </div>
+            )}
+            {avisoCita && <span className="text-[11px]" style={{ color: TEXTO_SECUNDARIO }}>{avisoCita}</span>}
           </Card>
 
           <Card titulo="Notas internas">
@@ -498,6 +562,7 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
           </>)}
         </div>
       )}
+      {dialogoEtapa}
     </div>
   );
 }

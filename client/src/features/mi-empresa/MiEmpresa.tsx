@@ -5,6 +5,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { llamarBackend } from '../../lib/backend';
 import { NAVY, TEAL, BORDE, SOMBRA_CARD, TEXTO_PRIMARIO, TEXTO_SECUNDARIO, TEXTO_TERCIARIO } from '../../lib/tema';
 import LogoEmpresa from '../../components/LogoEmpresa';
+import CamposPersonalizados from './CamposPersonalizados';
 
 const PRIMARIO_DEFECTO = '#0B1B33';
 const ACENTO_DEFECTO = 'var(--accent)';
@@ -18,6 +19,11 @@ export default function MiEmpresa() {
   const [guardando, setGuardando] = useState(false);
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState('');
+  const [cierreActivo, setCierreActivo] = useState(empresa?.cierre_auto_horas != null);
+  const [cierreHoras, setCierreHoras] = useState(String(empresa?.cierre_auto_horas ?? 24));
+  const [guardandoCierre, setGuardandoCierre] = useState(false);
+  const [mensajeCierre, setMensajeCierre] = useState('');
+  const [errorCierre, setErrorCierre] = useState('');
   const inputLogoRef = useRef<HTMLInputElement>(null);
 
   const subirLogo = async (file: File) => {
@@ -56,6 +62,26 @@ export default function MiEmpresa() {
       setError((err as Error).message || 'No se pudo guardar. Revisá que el backend esté corriendo.');
     } finally {
       setGuardando(false);
+    }
+  };
+
+  const guardarCierre = async () => {
+    setMensajeCierre('');
+    setErrorCierre('');
+    const horas = Number(cierreHoras);
+    if (cierreActivo && (!Number.isInteger(horas) || horas < 1 || horas > 720)) {
+      return setErrorCierre('Escribe un número entero de horas entre 1 y 720.');
+    }
+    setGuardandoCierre(true);
+    try {
+      const { ok, error: errorApi } = await llamarBackend('/empresas/mi-empresa', { cierre_auto_horas: cierreActivo ? horas : null }, 'PATCH');
+      if (!ok) throw new Error(errorApi || 'No se pudo guardar');
+      await recargarEmpresa();
+      setMensajeCierre('Guardado');
+    } catch (err) {
+      setErrorCierre((err as Error).message || 'No se pudo guardar. Revisa que el backend esté corriendo.');
+    } finally {
+      setGuardandoCierre(false);
     }
   };
 
@@ -136,6 +162,40 @@ export default function MiEmpresa() {
             </div>
           </div>
         </div>
+
+        <div className="rounded-2xl p-5 flex flex-col gap-3.5 max-w-xl" style={{ backgroundColor: 'var(--surface)', border: `1px solid ${BORDE}`, boxShadow: SOMBRA_CARD }}>
+          <span className="text-[15px] font-bold tracking-tight" style={{ color: TEXTO_PRIMARIO }}>Cierre automático de chats</span>
+          <p className="m-0 text-[12.5px] leading-relaxed" style={{ color: TEXTO_SECUNDARIO }}>
+            Si el último mensaje del chat fue de un vendedor y el cliente no contesta, el chat se cierra solo pasado este tiempo.
+            Si el cliente vuelve a escribir, el chat se reabre.
+          </p>
+          <label className="flex items-center gap-2 text-[13.5px]" style={{ color: TEXTO_PRIMARIO }}>
+            <input type="checkbox" checked={cierreActivo} onChange={(e) => setCierreActivo(e.target.checked)} />
+            Cerrar chats sin respuesta del cliente
+          </label>
+          {cierreActivo && (
+            <label className="flex items-center gap-2 text-[13.5px]" style={{ color: TEXTO_PRIMARIO }}>
+              Después de
+              <input
+                type="number"
+                min={1}
+                max={720}
+                value={cierreHoras}
+                onChange={(e) => setCierreHoras(e.target.value)}
+                className="rounded-lg px-2.5 outline-none text-[13.5px]"
+                style={{ border: `1px solid ${BORDE}`, color: TEXTO_PRIMARIO, height: 40, width: 90 }}
+              />
+              horas
+            </label>
+          )}
+          {errorCierre && <span className="text-xs" style={{ color: 'var(--bad)' }}>{errorCierre}</span>}
+          {mensajeCierre && <span className="text-xs" style={{ color: TEAL }}>{mensajeCierre}</span>}
+          <button onClick={guardarCierre} disabled={guardandoCierre} className="self-start text-[13.5px] font-semibold rounded-lg px-4" style={{ height: 40, backgroundColor: NAVY, color: 'white', opacity: guardandoCierre ? 0.6 : 1 }}>
+            {guardandoCierre ? 'Guardando...' : 'Guardar'}
+          </button>
+        </div>
+
+        <CamposPersonalizados />
       </div>
     </div>
   );

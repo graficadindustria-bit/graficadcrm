@@ -13,8 +13,13 @@ mensajes programados.
 - **[`client/`](client/)** — la página web (React + Vite + TypeScript).
 - **[`database/instalar.sql`](database/instalar.sql)** — crea todas las tablas
   en tu proyecto de Supabase. Se pega una vez en el SQL Editor.
+- **[`database/actualizar.sql`](database/actualizar.sql)** — trae a tu base las mejoras
+  nuevas. Se pega cuando el profe avisa; es seguro repetirlo.
 - **[`scripts/configurar.mjs`](scripts/configurar.mjs)** — escribe el `.env` y
   crea tu empresa y tu usuario.
+
+Cuando haya mejoras nuevas, seguí **[docs/ACTUALIZAR-MEJORAS.md](docs/ACTUALIZAR-MEJORAS.md)**.
+Si algo falla, mirá **[docs/PROBLEMAS-FRECUENTES.md](docs/PROBLEMAS-FRECUENTES.md)**.
 
 Cada CRM es de **una sola empresa**: se crea con `npm run configurar` y la
 base de datos no deja agregar otra.

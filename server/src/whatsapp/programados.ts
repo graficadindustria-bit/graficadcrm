@@ -2,6 +2,7 @@ import { supabase } from '../supabase/client.js';
 import type { MensajeProgramadoRow } from '../types/dominio.js';
 import { obtenerSesion } from './sesiones.js';
 import { marcarEnviadoPorCRM } from './mensajes-enviados-por-crm.js';
+import { construirContenidoWA } from './contenido.js';
 
 const CADA_MS = 20_000;
 // Si la línea está desconectada a la hora de enviar, se reintenta en cada
@@ -17,7 +18,7 @@ async function marcar(id: string, cambios: Partial<MensajeProgramadoRow>) {
 async function procesarVencidos(): Promise<void> {
   const { data: vencidos, error } = await supabase
     .from('mensajes_programados')
-    .select('id, conversacion_id, linea_id, telefono, contenido, enviar_en, cancelar_si_responde, creado_por, creado_en')
+    .select('id, conversacion_id, linea_id, telefono, contenido, tipo, media_url, mimetype, enviar_en, cancelar_si_responde, creado_por, creado_en')
     .eq('estado', 'pendiente')
     .lte('enviar_en', new Date().toISOString())
     .order('enviar_en')
@@ -61,16 +62,16 @@ async function procesarVencidos(): Promise<void> {
       }
 
       const jid = m.telefono.includes('@') ? m.telefono : `${m.telefono}@s.whatsapp.net`;
-      const resultado = await sesion.sock.sendMessage(jid, { text: m.contenido });
+      const resultado = await sesion.sock.sendMessage(jid, await construirContenidoWA({ tipo: m.tipo, texto: m.contenido, media_url: m.media_url, mimetype: m.mimetype }));
       if (resultado?.key?.id) marcarEnviadoPorCRM(resultado.key.id);
 
       await supabase.from('mensajes').insert({
         conversacion_id: m.conversacion_id,
         remitente: 'agente',
         agente_id: m.creado_por,
-        tipo: 'texto',
+        tipo: m.tipo,
         contenido: m.contenido,
-        media_url: null,
+        media_url: m.tipo === 'texto' ? null : m.media_url,
         whatsapp_id: resultado?.key?.id || null,
       });
       await marcar(m.id, { estado: 'enviado', enviado_en: new Date().toISOString() });

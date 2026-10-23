@@ -1,11 +1,27 @@
 import { Router } from 'express';
 import { obtenerSesion } from '../whatsapp/sesiones.js';
 import { buscarOCrearConversacion } from '../whatsapp/mensajes-entrantes.js';
-import { convertirAOggOpus } from '../whatsapp/audio.js';
+import { TIPOS_ENVIABLES, construirContenidoWA } from '../whatsapp/contenido.js';
 import { marcarEnviadoPorCRM } from '../whatsapp/mensajes-enviados-por-crm.js';
 import { supabase } from '../supabase/client.js';
 
 export const enviarRouter = Router();
+
+// Una línea que se cae (408) se reconecta sola en pocos segundos; en ese lapso
+// el socket viejo sigue en el mapa y manda "Connection Closed". En vez de
+// devolverle el error al agente, esperamos la reconexión y reintentamos.
+const ESPERA_RECONEXION_MS = 15000;
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function esperarSesionActiva(lineaId: string, excluir?: object) {
+  const limite = Date.now() + ESPERA_RECONEXION_MS;
+  for (;;) {
+    const s = obtenerSesion(lineaId);
+    if (s && s.estado === 'activo' && s.sock !== excluir) return s;
+    if (Date.now() >= limite) return undefined;
+    await esperar(500);
+  }
+}
 
 enviarRouter.post('/enviar', async (req, res) => {
   const { telefono, tipo = 'texto', texto, media_url, agente_id, linea_id, mimetype } = req.body;
@@ -15,43 +31,27 @@ enviarRouter.post('/enviar', async (req, res) => {
   if (tipo === 'texto' && !texto) return res.status(400).json({ error: 'Falta texto' });
   if (tipo !== 'texto' && !media_url) return res.status(400).json({ error: 'Falta media_url' });
 
-  const sesion = obtenerSesion(linea_id);
-  if (!sesion || sesion.estado !== 'activo') {
+  let sesion = await esperarSesionActiva(linea_id);
+  if (!sesion) {
     return res.status(503).json({ error: 'Esa línea de WhatsApp no está conectada' });
   }
 
   try {
     const jid = telefono.includes('@') ? telefono : `${telefono}@s.whatsapp.net`;
 
-    let contenidoWA;
-    if (tipo === 'texto') {
-      contenidoWA = { text: texto };
-    } else if (tipo === 'imagen') {
-      contenidoWA = { image: { url: media_url }, caption: texto || undefined };
-    } else if (tipo === 'pdf') {
-      contenidoWA = { document: { url: media_url }, mimetype: 'application/pdf', fileName: texto || 'documento.pdf' };
-    } else if (tipo === 'documento') {
-      // Cualquier archivo (zip, Excel, Word, PPT...), no solo PDF — a
-      // diferencia de 'pdf', acá el mimetype real viene del navegador
-      // (input.files[0].type) porque puede ser cualquier cosa.
-      contenidoWA = { document: { url: media_url }, mimetype: mimetype || 'application/octet-stream', fileName: texto || 'archivo' };
-    } else if (tipo === 'audio') {
-      // El navegador graba en el contenedor que soporte (WebM/Opus,
-      // MP4/AAC en Safari, etc.) — para que WhatsApp lo muestre como nota
-      // de voz de verdad hay que mandarlo como OGG/Opus. Lo que queda
-      // guardado en `mensajes` sigue siendo el archivo original (el
-      // navegador lo reproduce bien tal cual); esta conversión es solo
-      // para el envío por WhatsApp.
-      const original = await fetch(media_url);
-      if (!original.ok) throw new Error('No se pudo descargar el audio grabado');
-      const bufferOriginal = Buffer.from(await original.arrayBuffer());
-      const bufferOgg = await convertirAOggOpus(bufferOriginal);
-      contenidoWA = { audio: bufferOgg, mimetype: 'audio/ogg; codecs=opus', ptt: true };
-    } else {
-      return res.status(400).json({ error: 'Tipo no soportado' });
-    }
+    if (!(TIPOS_ENVIABLES as readonly string[]).includes(tipo)) return res.status(400).json({ error: 'Tipo no soportado' });
+    const contenidoWA = await construirContenidoWA({ tipo, texto, media_url, mimetype });
 
-    const resultado = await sesion.sock.sendMessage(jid, contenidoWA);
+    let resultado;
+    try {
+      resultado = await sesion.sock.sendMessage(jid, contenidoWA);
+    } catch (err) {
+      if (!/Connection Closed|Connection was lost/i.test((err as Error).message)) throw err;
+      const nueva = await esperarSesionActiva(linea_id, sesion.sock);
+      if (!nueva) return res.status(503).json({ error: 'La línea se está reconectando, intenta de nuevo en unos segundos' });
+      sesion = nueva;
+      resultado = await sesion.sock.sendMessage(jid, contenidoWA);
+    }
     if (resultado?.key?.id) marcarEnviadoPorCRM(resultado.key.id);
 
     const conversacion = await buscarOCrearConversacion(linea_id, telefono);

@@ -98,7 +98,10 @@ go ahead and enable them**, apretalo (sin eso no se publica nada). Si no aparece
 ### 5.2 Cargar tus 6 secretos (una sola vez)
 
 En tu repo: **Settings → Secrets and variables → Actions → New repository secret**.
-Cargá uno por uno (el nombre tiene que ser **exactamente** este):
+Cargá uno por uno. En cada uno hay **dos campos**:
+
+- **Name** (el campo chico de arriba): el nombre, **escrito a mano**, exactamente como en la tabla.
+- **Secret** (el cuadro grande): el valor. De la ficha copiá **solo** la línea o el bloque del valor, sin ninguna palabra de más.
 
 | Nombre del secreto | Qué ponés | De dónde sale |
 |---|---|---|
@@ -143,13 +146,6 @@ en los dos, los dos reciben los mismos mensajes y se pisan.
 
 ## Si algo falla
 
-| Ves esto | Qué hacer |
-|---|---|
-| La pestaña **Actions** no muestra "Publicar CRM" | Te faltó el **Sync fork** (paso 2) o activar las Actions (paso 5.1). |
-| ❌ **Faltan estos secretos en tu repo** | Revisá en Settings → Secrets que estén los 6, con el nombre exacto. |
-| ❌ en **Revisar el código (tipos)** | Tu cambio rompió el código. Mirá el error (dice archivo y línea), arreglalo, y `git add .` / `git commit` / `git push` de nuevo. Tu CRM publicado sigue con la versión anterior. |
-| ❌ en **Mandar al servidor**: `Permission denied` | La `DEPLOY_KEY` está incompleta. Volvé a copiarla entera, con `-----BEGIN` y `-----END`. |
-| ❌ **La versión nueva no arrancó** | Casi siempre son las claves de Supabase mal copiadas. Tu CRM volvió solo a la versión anterior. |
-| `git push` dice **rejected** | Primero `git pull`, después `git push`. |
-| `git push` pide usuario y contraseña en la terminal | Cerrá PowerShell, abrilo de nuevo y repetí `git push`: tiene que abrir la ventana del navegador. |
-| La página publicada no abre | Avisale al profe: puede que tu sitio no esté dado de alta todavía. |
+Mirá la lista completa en **[docs/PROBLEMAS-FRECUENTES.md](PROBLEMAS-FRECUENTES.md)**.
+Si la publicación sale con ❌, hacé clic en la ejecución → en el paso con ❌ → leé
+el mensaje rojo: ahora dice **qué secreto está mal y cómo arreglarlo**.

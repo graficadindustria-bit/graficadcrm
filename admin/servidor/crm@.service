@@ -12,12 +12,12 @@ Group=crm-%i
 WorkingDirectory=/srv/crm/%i/actual/server
 EnvironmentFile=/srv/crm/%i/.env
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/node --max-old-space-size=384 dist/index.js
+ExecStart=/usr/bin/node --max-old-space-size=640 dist/index.js
 Restart=always
 RestartSec=5
 
-MemoryHigh=420M
-MemoryMax=520M
+MemoryHigh=800M
+MemoryMax=1000M
 CPUQuota=100%
 
 NoNewPrivileges=true
