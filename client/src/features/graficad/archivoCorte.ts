@@ -244,18 +244,21 @@ function leerSvg(texto: string): Contorno[] {
       const pasos = Math.max(16, Math.min(4000, Math.ceil(total * escala)));
       const paso = (total * escala) / pasos;
       const cerradoPorTipo = ['rect', 'circle', 'ellipse', 'polygon'].includes(el.tagName.toLowerCase());
+      // Al cortar en un salto, la última muestra de la subfigura puede quedar
+      // hasta un paso antes de su cierre: si vuelve cerca del inicio, es cerrada.
+      const vuelve = (pts: Punto[]) => pts.length > 3 && dist(pts[0], pts[pts.length - 1]) <= paso * 1.5 + TOLERANCIA;
       let actual: Punto[] = [];
       for (let i = 0; i <= pasos; i++) {
         const q = el.getPointAtLength((total * i) / pasos);
         const p: Punto = [(ctm.a * q.x + ctm.c * q.y + ctm.e) * PX_A_MM, (ctm.b * q.x + ctm.d * q.y + ctm.f) * PX_A_MM];
         // Un salto mucho más largo que el paso es un "moveto": otra subfigura.
         if (actual.length && dist(actual[actual.length - 1], p) > paso * 3 + TOLERANCIA) {
-          contornos.push({ pts: actual, cerrado: false });
+          contornos.push({ pts: actual, cerrado: vuelve(actual) });
           actual = [];
         }
         actual.push(p);
       }
-      if (actual.length > 1) contornos.push({ pts: actual, cerrado: cerradoPorTipo });
+      if (actual.length > 1) contornos.push({ pts: actual, cerrado: cerradoPorTipo || vuelve(actual) });
     });
   } finally {
     caja.remove();
