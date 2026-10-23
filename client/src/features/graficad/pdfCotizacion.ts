@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import logoGraficad from './logo-graficad-pdf.png';
 import { calcularCotizacion, datosPdf, formatoBs, formatoNumero, nombreMaterial, type DatosCotizacion, type Tarifas } from './tarifas';
 
 // PDF de la cotización para el cliente, con el formato de las proformas de
@@ -16,7 +17,7 @@ const INICIO_PIE = 262;
 const LIMITE_CONTENIDO = INICIO_PIE - 8;
 const COL = { desc: 20, anchoDesc: 84, cant: 120, precio: 148, total: 176 };
 
-interface Imagen {
+export interface Imagen {
   data: string;
   w: number;
   h: number;
@@ -58,14 +59,16 @@ export async function pdfCotizacion(opciones: {
   cliente: string;
   datos: DatosCotizacion;
   tarifas: Tarifas;
-  logoUrl: string | null;
+  /** Logo ya cargado (para generar el PDF fuera del navegador). */
+  logo?: Imagen | null;
   fecha?: Date;
 }): Promise<jsPDF> {
   const { numero, cliente, datos, tarifas } = opciones;
   const p = datosPdf(tarifas);
   const c = calcularCotizacion(datos, tarifas);
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const logo = opciones.logoUrl ? await cargarImagen(opciones.logoUrl, 600, 'PNG') : null;
+  // El logo de las proformas, recortado sobre el mismo naranja de la cabecera.
+  const logo = opciones.logo !== undefined ? opciones.logo : await cargarImagen(logoGraficad, 800, 'PNG');
   const imagenes = await Promise.all(datos.items.map((i) => (i.imagen ? cargarImagen(i.imagen, 1400, 'JPEG') : Promise.resolve(null))));
 
   const terminos = [(datos.terminos ?? '').trim() || p.terminos, `Proforma válida por ${tarifas.validezDias} días.`].join(' ');

@@ -31,7 +31,7 @@ Se suman la lámina (lista de precios de la web), diseño, armado, instalación 
 
 ## PDF para el cliente
 
-Con **Enviar en PDF** marcado, el cotizador arma un PDF con el formato de las proformas de Graficad: franja naranja con el logo de "Mi empresa" y la frase, cliente y fecha, cada ítem con su imagen de referencia, el total y el pie con términos y contacto. Se manda un saludo corto y el PDF como documento. **Descargar PDF** lo baja sin enviarlo. La frase, el contacto y los términos por defecto se editan en **Catálogo y tarifas → PDF de la cotización**.
+Con **Enviar en PDF** marcado, el cotizador arma un PDF con el formato de las proformas de Graficad: franja naranja con el logo de Graficad y la frase, cliente y fecha, cada ítem con su imagen de referencia, el total y el pie con términos y contacto. Se manda un saludo corto y el PDF como documento. **Descargar PDF** lo baja sin enviarlo. La frase, el contacto y los términos por defecto se editan en **Catálogo y tarifas → PDF de la cotización**.
 
 ## Desde qué número sale
 

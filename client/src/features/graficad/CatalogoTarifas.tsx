@@ -111,7 +111,7 @@ export default function CatalogoTarifas() {
 
       <Tarjeta className="p-4">
         <span className="eyebrow">PDF de la cotización</span>
-        <p className="text-[12px] mt-1" style={{ color: TEXTO_TERCIARIO }}>El logo sale de "Mi empresa". La validez se agrega sola al final de los términos.</p>
+        <p className="text-[12px] mt-1" style={{ color: TEXTO_TERCIARIO }}>El logo es el de las proformas de Graficad. La validez se agrega sola al final de los términos.</p>
         <div className="grid gap-3 mt-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
           {CAMPOS_PDF.map(({ k, label, largo }) => (
             <div key={k} className="min-w-0" style={largo ? { gridColumn: '1 / -1' } : undefined}>

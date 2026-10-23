@@ -83,7 +83,7 @@ interface CotizadorProps {
 // cliente (solo precios) se envía a su chat de WhatsApp; la orden de corte
 // (material, lámina, metros, minutos, máquina) es para el taller.
 export default function Cotizador({ conversaciones, conversacionInicial, onAbrirChat }: CotizadorProps) {
-  const { usuario, empresa } = useAuth();
+  const { usuario } = useAuth();
   const toast = useToast();
   const { tarifas, sinInstalar: tarifasSinInstalar, cargando } = useTarifas();
   const etapas = useEtapasVenta(usuario?.empresa_id);
@@ -155,7 +155,7 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
     cambiarItem(itemId, { imagen: supabase.storage.from('media').getPublicUrl(ruta).data.publicUrl });
   };
 
-  const armarPdf = (num: string) => pdfCotizacion({ numero: num, cliente: nombreCliente, datos, tarifas, logoUrl: empresa?.logo_url || null });
+  const armarPdf = (num: string) => pdfCotizacion({ numero: num, cliente: nombreCliente, datos, tarifas });
 
   const descargarPdf = async () => {
     const doc = await armarPdf(numero);
