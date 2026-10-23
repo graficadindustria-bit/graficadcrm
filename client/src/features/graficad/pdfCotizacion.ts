@@ -14,7 +14,7 @@ const ANCHO = 210;
 const ALTO = 297;
 const ALTO_CABECERA = 38;
 const INICIO_PIE = 262;
-const LIMITE_CONTENIDO = INICIO_PIE - 8;
+const LIMITE_CONTENIDO = INICIO_PIE - 5;
 const COL = { desc: 20, anchoDesc: 84, cant: 120, precio: 148, total: 176 };
 
 export interface Imagen {
@@ -149,26 +149,25 @@ export async function pdfCotizacion(opciones: {
     return encabezadoTabla(88);
   };
 
-  const paginaNueva = () => {
+  const paginaNueva = (conTabla: boolean) => {
     doc.addPage();
     cabecera();
     pie();
-    return encabezadoTabla(ALTO_CABECERA + 10);
+    return conTabla ? encabezadoTabla(ALTO_CABECERA + 10) : ALTO_CABECERA + 12;
   };
 
   let y = primeraPagina();
-  const espacio = (alto: number) => {
-    if (y + alto > LIMITE_CONTENIDO) y = paginaNueva();
+  const espacio = (alto: number, conTabla = true) => {
+    if (y + alto > LIMITE_CONTENIDO) y = paginaNueva(conTabla);
   };
 
   datos.items.forEach((item, i) => {
     const ci = c.items[i];
     const piezas = Math.max(1, item.piezas || 1);
     const titulo = item.descripcion.trim() || (ci.material ? nombreMaterial(ci.material) : 'Trabajo');
-    const detalle = ci.material && item.descripcion.trim() ? ` En ${nombreMaterial(ci.material)}, corte ${item.maquina === 'laser' ? 'láser' : 'CNC router'}.` : '';
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    const lineas: string[] = doc.splitTextToSize(`${i + 1}.- ${titulo}.${detalle}`.replace('..', '.'), COL.anchoDesc);
+    const lineas: string[] = doc.splitTextToSize(`${i + 1}.- ${titulo}`, COL.anchoDesc);
     const altoTexto = lineas.length * 4.1;
 
     const img = imagenes[i];
@@ -192,7 +191,7 @@ export async function pdfCotizacion(opciones: {
     y += altoTexto + 2;
     doc.setLineWidth(0.3);
     doc.line(COL.desc, y, 190, y);
-    y += 7;
+    y += 6;
   });
 
   const extras = ([['Diseño', datos.diseno], ['Armado', datos.armado], ['Instalación', datos.instalacion], ['Otros', datos.otros], [`Factura (${tarifas.factura} %)`, c.factura]] as const).filter(([, v]) => v > 0);
@@ -207,8 +206,7 @@ export async function pdfCotizacion(opciones: {
     y += 7;
   });
 
-  espacio(22);
-  y += 2;
+  espacio(18, false);
   doc.setLineWidth(0.4);
   doc.roundedRect(103, y, 90, 11, 4, 4, 'S');
   doc.setFont('helvetica', 'bold');
