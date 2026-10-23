@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { AMBER, TEXTO_PRIMARIO, TEXTO_SECUNDARIO, TEXTO_TERCIARIO } from '../../lib/tema';
 import { Boton, EncabezadoPagina, Tarjeta, useToast } from '../../components/ui';
-import { TARIFAS_POR_DEFECTO, type Material, type ModoCorte, type Tarifas } from './tarifas';
+import { TARIFAS_POR_DEFECTO, datosPdf, type DatosPdf, type Material, type ModoCorte, type Tarifas } from './tarifas';
 import { useTarifas } from './useTarifas';
 
 const celda = 'w-full rounded-md px-2 py-1.5 text-[13px] outline-none tabular-nums';
@@ -15,7 +15,7 @@ const MODO: Record<ModoCorte, string> = {
   metro: 'Bs por metro fijo',
 };
 
-const GENERALES: { k: keyof Omit<Tarifas, 'materiales' | 'lineaCotizaciones'>; label: string; unidad: string }[] = [
+const GENERALES: { k: keyof Omit<Tarifas, 'materiales' | 'lineaCotizaciones' | 'pdf'>; label: string; unidad: string }[] = [
   { k: 'laserMinuto', label: 'Láser en acrílico, PET y PAI', unidad: 'Bs por minuto' },
   { k: 'grabadoMinuto', label: 'Grabado relleno', unidad: 'Bs por minuto' },
   { k: 'descuentoRouter', label: 'Descuento en CNC router', unidad: '% sobre el corte' },
@@ -23,6 +23,15 @@ const GENERALES: { k: keyof Omit<Tarifas, 'materiales' | 'lineaCotizaciones'>; l
   { k: 'factorMedia', label: 'Media lámina sin precio propio', unidad: 'fracción de la entera' },
   { k: 'anticipo', label: 'Anticipo para iniciar', unidad: '%' },
   { k: 'validezDias', label: 'Validez de la cotización', unidad: 'días' },
+];
+
+const CAMPOS_PDF: { k: keyof DatosPdf; label: string; largo?: boolean }[] = [
+  { k: 'frase', label: 'Frase de la cabecera' },
+  { k: 'autorFrase', label: 'Autor de la frase' },
+  { k: 'email', label: 'Correo' },
+  { k: 'telefonos', label: 'Teléfonos' },
+  { k: 'direccion', label: 'Dirección' },
+  { k: 'terminos', label: 'Términos y condiciones por defecto', largo: true },
 ];
 
 const num = (t: string): number | null => (t.trim() === '' ? null : Math.max(0, Number(t) || 0));
@@ -98,6 +107,23 @@ export default function CatalogoTarifas() {
           </div>
         </div>
         <p className="text-[12px] mt-3" style={{ color: TEXTO_TERCIARIO }}>Foam, MDF y melamina se cobran a 1 Bs por metro de corte por cada mm de espesor (5 mm = Bs 5 el metro).</p>
+      </Tarjeta>
+
+      <Tarjeta className="p-4">
+        <span className="eyebrow">PDF de la cotización</span>
+        <p className="text-[12px] mt-1" style={{ color: TEXTO_TERCIARIO }}>El logo sale de "Mi empresa". La validez se agrega sola al final de los términos.</p>
+        <div className="grid gap-3 mt-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
+          {CAMPOS_PDF.map(({ k, label, largo }) => (
+            <div key={k} className="min-w-0" style={largo ? { gridColumn: '1 / -1' } : undefined}>
+              <label htmlFor={`pdf-${k}`} className="block text-[12px] font-semibold mb-1" style={{ color: TEXTO_PRIMARIO }}>{label}</label>
+              {largo ? (
+                <textarea id={`pdf-${k}`} rows={2} value={datosPdf(borrador)[k]} onChange={(e) => setBorrador((b) => ({ ...b, pdf: { ...b.pdf, [k]: e.target.value } }))} className={celda} style={{ ...celdaStyle, resize: 'vertical' }} />
+              ) : (
+                <input id={`pdf-${k}`} value={datosPdf(borrador)[k]} onChange={(e) => setBorrador((b) => ({ ...b, pdf: { ...b.pdf, [k]: e.target.value } }))} className={celda} style={celdaStyle} />
+              )}
+            </div>
+          ))}
+        </div>
       </Tarjeta>
 
       <Tarjeta className="overflow-hidden">

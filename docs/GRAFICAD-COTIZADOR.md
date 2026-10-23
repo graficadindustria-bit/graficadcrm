@@ -29,6 +29,10 @@ Sin el paso 1, el cotizador igual calcula y copia, pero no guarda ni envía.
 
 Se suman la lámina (lista de precios de la web), diseño, armado, instalación y otros. CNC router resta 5 % al corte y con factura se agrega 16 %.
 
+## PDF para el cliente
+
+Con **Enviar en PDF** marcado, el cotizador arma un PDF con el formato de las proformas de Graficad: franja naranja con el logo de "Mi empresa" y la frase, cliente y fecha, cada ítem con su imagen de referencia, el total y el pie con términos y contacto. Se manda un saludo corto y el PDF como documento. **Descargar PDF** lo baja sin enviarlo. La frase, el contacto y los términos por defecto se editan en **Catálogo y tarifas → PDF de la cotización**.
+
 ## Desde qué número sale
 
 En **Catálogo y tarifas → Enviar cotizaciones desde** se elige la línea corporativa. Si no se elige ninguna, la cotización sale por la línea donde escribió el cliente. En el cotizador, **Enviar desde** permite cambiarla para una cotización puntual.
