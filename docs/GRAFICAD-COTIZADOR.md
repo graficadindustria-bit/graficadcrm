@@ -31,5 +31,6 @@ Se suman la lámina (lista de precios de la web), diseño, armado, instalación 
 
 ## Qué hace con el embudo
 
-- Al **enviar** la cotización, el contacto pasa a la etapa que tenga "negoci" en el nombre (En Negociación) y se anota el monto.
-- **Pagó anticipo** pasa el contacto a la etapa de venta ganada; **Rechazada**, a la de venta perdida.
+- Al **enviar** la cotización, el contacto pasa a la etapa que tenga "negoci" en el nombre (En Negociación) y se crea una oportunidad "COT-0001 · Cliente" con el monto. Si se reenvía, se actualiza esa misma oportunidad.
+- **Pagó anticipo** pasa el contacto a la etapa de venta ganada y cierra la oportunidad como ganada; **Rechazada** la pasa a venta perdida.
+- Si la base todavía no tiene la tabla `oportunidades` (versión 6 del curso), el monto se anota directo en el contacto.

@@ -167,15 +167,53 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
     return data;
   };
 
-  // Pasa la tarjeta del contacto a la etapa indicada y anota el monto.
-  const moverContacto = async (telefono: string | null, buscarEtapa: (nombre: string, tipo: string) => boolean, valor: number) => {
-    if (!telefono) return;
+  // Pasa la tarjeta del contacto a la etapa indicada y lleva la cotización como
+  // una oportunidad del contacto ("COT-0001 · ..."), que es lo que suma el monto
+  // en Oportunidades, el Embudo y los reportes.
+  const moverContacto = async (
+    telefono: string | null,
+    buscarEtapa: (nombre: string, tipo: string) => boolean,
+    cot: { numero: number; total: number; cliente: string },
+    cierre?: 'ganada' | 'perdida',
+  ) => {
+    if (!telefono || !usuario) return;
     const tel = telefono.split('@')[0];
+    const ahora = new Date().toISOString();
     const etapa = etapas.find((e) => buscarEtapa(e.nombre.toLowerCase(), e.tipo));
-    await supabase
-      .from('contactos')
-      .update({ valor_estimado: valor, ...(etapa ? { etapa_id: etapa.id, etapa_actualizada_en: new Date().toISOString() } : {}) })
-      .eq('telefono', tel);
+    const { data: contacto } = await supabase.from('contactos').select('id').eq('telefono', tel).limit(1).maybeSingle<{ id: string }>();
+    if (!contacto) return;
+    if (etapa) await supabase.from('contactos').update({ etapa_id: etapa.id, etapa_actualizada_en: ahora }).eq('id', contacto.id);
+
+    const num = numeroCotizacion(cot.numero);
+    const { data: existente, error } = await supabase
+      .from('oportunidades')
+      .select('id')
+      .eq('contacto_id', contacto.id)
+      .like('producto', `${num} ·%`)
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+    if (error) {
+      // Base sin la tabla de oportunidades (falta correr actualizar.sql): el monto va al contacto.
+      await supabase.from('contactos').update({ valor_estimado: cot.total }).eq('id', contacto.id);
+      return;
+    }
+    const cambios = {
+      monto: cot.total,
+      actualizado_en: ahora,
+      ...(cierre
+        ? { estado: cierre, probabilidad: cierre === 'ganada' ? 100 : 0, cerrada_en: ahora }
+        : { estado: 'abierta', cerrada_en: null, ...(etapa?.probabilidad != null ? { probabilidad: etapa.probabilidad } : {}) }),
+    };
+    if (existente) await supabase.from('oportunidades').update(cambios).eq('id', existente.id);
+    else
+      await supabase.from('oportunidades').insert({
+        empresa_id: usuario.empresa_id,
+        contacto_id: contacto.id,
+        creado_por: usuario.id,
+        producto: `${num} · ${cot.cliente || 'Cotización'}`,
+        probabilidad: etapa?.probabilidad ?? 50,
+        ...cambios,
+      });
   };
 
   const enviar = async () => {
@@ -198,7 +236,7 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
       await supabase.from('conversaciones').update({ ultima_actividad: new Date().toISOString() }).eq('id', conversacion.id);
       await supabase.from('graficad_cotizaciones').update({ estado: 'enviada' }).eq('id', guardada.id);
       setEditando({ ...guardada, estado: 'enviada' });
-      await moverContacto(conversacion.contacto_telefono, (n, tipo) => tipo === 'normal' && n.includes('negoci'), calculo.total);
+      await moverContacto(conversacion.contacto_telefono, (n, tipo) => tipo === 'normal' && n.includes('negoci'), { numero: guardada.numero, total: calculo.total, cliente: nombreCliente });
       toast('Cotización enviada al chat', 'ok');
       cargarLista();
     } finally {
@@ -209,8 +247,9 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
   const cambiarEstado = async (c: Cotizacion, estado: Estado) => {
     const { error } = await supabase.from('graficad_cotizaciones').update({ estado, actualizado_en: new Date().toISOString() }).eq('id', c.id);
     if (error) return toast('No se pudo cambiar el estado.', 'error');
-    if (estado === 'aprobada') await moverContacto(c.contacto_telefono, (_, tipo) => tipo === 'ganada', c.total);
-    if (estado === 'rechazada') await moverContacto(c.contacto_telefono, (_, tipo) => tipo === 'perdida', c.total);
+    const cot = { numero: c.numero, total: c.total, cliente: c.cliente };
+    if (estado === 'aprobada') await moverContacto(c.contacto_telefono, (_, tipo) => tipo === 'ganada', cot, 'ganada');
+    if (estado === 'rechazada') await moverContacto(c.contacto_telefono, (_, tipo) => tipo === 'perdida', cot, 'perdida');
     if (editando?.id === c.id) setEditando({ ...editando, estado });
     toast(estado === 'aprobada' ? 'Aprobada: el contacto pasó a venta ganada' : estado === 'rechazada' ? 'Marcada como rechazada' : 'Estado actualizado', 'ok');
     cargarLista();
