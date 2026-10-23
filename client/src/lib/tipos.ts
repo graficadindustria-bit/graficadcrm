@@ -104,6 +104,26 @@ export interface EtapaVenta {
   probabilidad: number | null;
 }
 
+export type EstadoOportunidad = 'abierta' | 'ganada' | 'perdida';
+
+// Una venta posible con un contacto. Un contacto puede tener varias; las
+// ganadas y perdidas quedan como historial — ver database/032_oportunidades.sql.
+export interface Oportunidad {
+  id: string;
+  empresa_id: string;
+  contacto_id: string;
+  producto: string | null;
+  monto: number;
+  probabilidad: number;
+  estado: EstadoOportunidad;
+  motivo_perdida_id: string | null;
+  nota: string | null;
+  creado_por: string | null;
+  creado_en: string;
+  actualizado_en: string;
+  cerrada_en: string | null;
+}
+
 export type TipoCampo = 'texto' | 'numero' | 'fecha' | 'seleccion' | 'casilla';
 
 // Campo propio de la ficha de cliente, definido por cada empresa — ver

@@ -492,7 +492,7 @@ create policy "media_actualizacion_autenticados" on storage.objects for update
   with check (bucket_id = 'media');
 
 -- =========================================================
--- Mejoras posteriores (versión 5)
+-- Mejoras posteriores (versión 6)
 -- Todo lo que sigue es idéntico a database/actualizar.sql: los que instalan
 -- de cero reciben todo junto. Si agregás una mejora nueva, va en los dos archivos.
 -- =========================================================
@@ -684,7 +684,95 @@ begin
   end if;
 end $$;
 
--- ---------- 6. Versión de la base ----------
+-- ---------- 6. Oportunidades por contacto, con historial ----------
+-- Un contacto puede tener varias oportunidades (abiertas, ganadas o perdidas).
+-- contactos.valor_estimado y contactos.probabilidad_cierre siguen existiendo:
+-- un trigger los recalcula solo cada vez que cambia una oportunidad.
+create table if not exists oportunidades (
+  id uuid primary key default gen_random_uuid(),
+  empresa_id uuid not null references empresas (id) on delete cascade,
+  contacto_id uuid not null references contactos (id) on delete cascade,
+  producto text,
+  monto numeric not null default 0 check (monto >= 0),
+  probabilidad smallint not null default 0 check (probabilidad between 0 and 100),
+  estado text not null default 'abierta' check (estado in ('abierta', 'ganada', 'perdida')),
+  motivo_perdida_id uuid references motivos_perdida (id) on delete set null,
+  nota text,
+  creado_por uuid references usuarios (id) on delete set null,
+  creado_en timestamptz not null default now(),
+  actualizado_en timestamptz not null default now(),
+  cerrada_en timestamptz
+);
+create index if not exists oportunidades_contacto_idx on oportunidades (contacto_id);
+create index if not exists oportunidades_empresa_estado_idx on oportunidades (empresa_id, estado);
+
+alter table oportunidades enable row level security;
+
+-- Quien puede ver un contacto (la policy de `contactos` ya filtra por empresa y
+-- por línea del vendedor) puede ver y trabajar sus oportunidades.
+drop policy if exists "oportunidades_todo" on oportunidades;
+create policy "oportunidades_todo" on oportunidades for all
+  using (contacto_id in (select id from contactos))
+  with check (
+    empresa_id = (select empresa_id from usuario_actual())
+    and contacto_id in (select id from contactos)
+  );
+
+-- Mantiene al día los totales del contacto que leen el Embudo, Hoy y Reportes:
+--  * valor_estimado = suma de las oportunidades abiertas y ganadas;
+--  * probabilidad_cierre = la mayor de las abiertas (100 si solo hay ganadas).
+create or replace function oportunidades_sincronizar_contacto() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  cid uuid := coalesce(new.contacto_id, old.contacto_id);
+begin
+  update contactos c set
+    valor_estimado = (select sum(monto) from oportunidades where contacto_id = cid and estado in ('abierta', 'ganada')),
+    probabilidad_cierre = coalesce(
+      (select max(probabilidad) from oportunidades where contacto_id = cid and estado = 'abierta'),
+      case when exists (select 1 from oportunidades where contacto_id = cid and estado = 'ganada') then 100 end
+    ),
+    actualizado_en = now()
+  where c.id = cid;
+  return null;
+end;
+$$;
+
+drop trigger if exists oportunidades_sincronizar on oportunidades;
+create trigger oportunidades_sincronizar
+  after insert or update or delete on oportunidades
+  for each row execute function oportunidades_sincronizar_contacto();
+
+-- Pasa lo que ya existía en `contactos` a la nueva tabla (una sola vez).
+insert into oportunidades (empresa_id, contacto_id, producto, monto, probabilidad, estado, motivo_perdida_id, creado_en, actualizado_en, cerrada_en)
+select
+  c.empresa_id,
+  c.id,
+  c.producto_interes,
+  coalesce(c.valor_estimado, 0),
+  coalesce(c.probabilidad_cierre, 0),
+  case e.tipo when 'ganada' then 'ganada' when 'perdida' then 'perdida' else 'abierta' end,
+  c.motivo_perdida_id,
+  c.creado_en,
+  c.actualizado_en,
+  case when e.tipo in ('ganada', 'perdida') then coalesce(c.etapa_actualizada_en, c.actualizado_en) end
+from contactos c
+left join etapas_venta e on e.id = c.etapa_id
+where not exists (select 1 from oportunidades o where o.contacto_id = c.id)
+  and (
+    coalesce(c.valor_estimado, 0) > 0
+    or coalesce(c.probabilidad_cierre, 0) > 0
+    or c.temperatura = 'caliente'
+    or e.tipo in ('ganada', 'perdida')
+  );
+
+do $$
+begin
+  alter publication supabase_realtime add table oportunidades;
+exception when duplicate_object then null;
+end $$;
+
+-- ---------- 7. Versión de la base ----------
 -- El CRM la lee para avisarte si te falta correr esta actualización.
 create table if not exists esquema_version (
   id int primary key default 1 check (id = 1),
@@ -698,7 +786,7 @@ drop policy if exists "esquema_version_select" on esquema_version;
 create policy "esquema_version_select" on esquema_version for select
   to authenticated using (true);
 
-insert into esquema_version (id, version) values (1, 5)
+insert into esquema_version (id, version) values (1, 6)
 on conflict (id) do update
   set version = greatest(esquema_version.version, excluded.version),
       actualizado_en = now();

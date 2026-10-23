@@ -7,6 +7,7 @@ import { useEtapasVenta } from './hooks/useEtapasVenta';
 import { formatoTelefono, inicialesDe } from './utils';
 import { useCambioEtapa } from '../pipeline/useCambioEtapa';
 import FichaExtra from './FichaExtra';
+import OportunidadesContacto from '../oportunidades/OportunidadesContacto';
 import ProgramadosContacto from './ProgramadosContacto';
 import { EVENTO_CAMBIO } from './ProgramarMensaje';
 import { tinte, TEAL, AMBER, TEMPERATURA_STYLE, BORDE, SOMBRA_CARD, TEXTO_PRIMARIO, TEXTO_SECUNDARIO, TEXTO_TERCIARIO, colorEtiquetaWhatsapp } from '../../lib/tema';
@@ -76,17 +77,9 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
   const [nombreBorrador, setNombreBorrador] = useState('');
   const [nombreGuardado, setNombreGuardado] = useState(false);
   const [errorNombre, setErrorNombre] = useState('');
-  const [valorBorrador, setValorBorrador] = useState('');
-  const [productoBorrador, setProductoBorrador] = useState('');
-  const [probabilidadBorrador, setProbabilidadBorrador] = useState('');
-  const [oportunidadGuardada, setOportunidadGuardada] = useState(false);
-  const [errorOportunidad, setErrorOportunidad] = useState('');
 
   useEffect(() => {
     setNombreBorrador(contacto?.nombre || '');
-    setValorBorrador(contacto?.valor_estimado != null ? String(contacto.valor_estimado) : '');
-    setProductoBorrador(contacto?.producto_interes || '');
-    setProbabilidadBorrador(contacto?.probabilidad_cierre != null ? String(contacto.probabilidad_cierre) : '');
   }, [contacto?.id]);
 
   const cargarNotas = async (contactoId: string) => {
@@ -202,19 +195,6 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
     }
     setNombreGuardado(true);
     setTimeout(() => setNombreGuardado(false), 1800);
-  };
-
-  const guardarOportunidad = async () => {
-    setErrorOportunidad('');
-    const okValor = await actualizarCampo('valor_estimado', valorBorrador.trim() === '' ? null : String(Number(valorBorrador)));
-    const okProbabilidad = await actualizarCampo('probabilidad_cierre', probabilidadBorrador.trim() === '' ? null : String(Math.min(100, Math.max(0, Number(probabilidadBorrador)))));
-    const okProducto = await actualizarCampo('producto_interes', productoBorrador.trim() === '' ? null : productoBorrador.trim());
-    if (!okValor || !okProbabilidad || !okProducto) {
-      setErrorOportunidad('No se pudo guardar — no tenés permiso para editar este contacto.');
-      return;
-    }
-    setOportunidadGuardada(true);
-    setTimeout(() => setOportunidadGuardada(false), 1800);
   };
 
   const agregarNota = async () => {
@@ -434,51 +414,8 @@ export default function PanelContacto({ telefono: telefonoCrudo, lineaId, asigna
           </>)}
 
           {pestana === 'venta' && (<>
-          <Card titulo="Oportunidad de venta">
-            <label className="flex flex-col gap-1.5 text-xs font-semibold" style={{ color: 'var(--fg-2)' }}>
-              Producto o servicio
-              <input
-                value={productoBorrador}
-                onChange={(e) => setProductoBorrador(e.target.value)}
-                placeholder="Ej: Club VIP, instalación de gas..."
-                className="rounded-lg px-2.5 outline-none font-normal text-[13.5px]"
-                style={{ height: 36, border: `1px solid ${BORDE}`, color: TEXTO_PRIMARIO }}
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-2.5">
-              <label className="flex flex-col gap-1.5 text-xs font-semibold" style={{ color: 'var(--fg-2)' }}>
-                Monto (Bs.)
-                <input
-                  type="number"
-                  value={valorBorrador}
-                  onChange={(e) => setValorBorrador(e.target.value)}
-                  placeholder="0"
-                  className="rounded-lg px-2.5 outline-none font-normal text-[13.5px]"
-                  style={{ height: 36, border: `1px solid ${BORDE}`, color: TEXTO_PRIMARIO, fontFamily: 'var(--fuente-mono)' }}
-                />
-              </label>
-              <label className="flex flex-col gap-1.5 text-xs font-semibold" style={{ color: 'var(--fg-2)' }}>
-                Prob. de cierre (%)
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={probabilidadBorrador}
-                  onChange={(e) => setProbabilidadBorrador(e.target.value)}
-                  placeholder="0"
-                  className="rounded-lg px-2.5 outline-none font-normal text-[13.5px]"
-                  style={{ height: 36, border: `1px solid ${BORDE}`, color: TEXTO_PRIMARIO, fontFamily: 'var(--fuente-mono)' }}
-                />
-              </label>
-            </div>
-            <button
-              onClick={guardarOportunidad}
-              className="self-start text-[12.5px] font-semibold rounded-lg px-3.5"
-              style={{ height: 32, backgroundColor: oportunidadGuardada ? 'var(--ok)' : TEAL, color: 'white' }}
-            >
-              {oportunidadGuardada ? 'Guardado ✓' : 'Guardar oportunidad'}
-            </button>
-            {errorOportunidad && <span className="text-[11px]" style={{ color: 'var(--bad)' }}>{errorOportunidad}</span>}
+          <Card titulo="Oportunidades">
+            {usuario && <OportunidadesContacto contactoId={contacto.id} empresaId={usuario.empresa_id} usuarioId={usuario.id} />}
           </Card>
           </>)}
 

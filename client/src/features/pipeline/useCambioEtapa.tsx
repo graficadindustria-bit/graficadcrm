@@ -34,6 +34,23 @@ export function useCambioEtapa(etapas: EtapaVenta[]): {
     };
     alAplicar(cambios);
     await supabase.from('contactos').update(cambios).eq('id', contactoId);
+    // Las oportunidades abiertas del contacto acompañan a la etapa: en una etapa
+    // ganada o perdida se cierran, y en una intermedia toman su probabilidad.
+    if (etapa.tipo === 'ganada' || etapa.tipo === 'perdida') {
+      await supabase
+        .from('oportunidades')
+        .update({
+          estado: etapa.tipo,
+          probabilidad: etapa.tipo === 'ganada' ? 100 : 0,
+          motivo_perdida_id: etapa.tipo === 'perdida' ? motivoId : null,
+          cerrada_en: cambios.etapa_actualizada_en,
+          actualizado_en: cambios.etapa_actualizada_en,
+        })
+        .eq('contacto_id', contactoId)
+        .eq('estado', 'abierta');
+    } else if (etapa.probabilidad !== null && etapa.probabilidad !== undefined) {
+      await supabase.from('oportunidades').update({ probabilidad: etapa.probabilidad }).eq('contacto_id', contactoId).eq('estado', 'abierta');
+    }
   };
 
   const cambiarEtapa = (contactoId: string, etapaId: string, alAplicar: (cambios: Cambios) => void) => {
