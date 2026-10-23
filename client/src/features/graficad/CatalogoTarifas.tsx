@@ -23,6 +23,7 @@ const GENERALES: { k: keyof Omit<Tarifas, 'materiales' | 'lineaCotizaciones' | '
   { k: 'factorMedia', label: 'Media lámina sin precio propio', unidad: 'fracción de la entera' },
   { k: 'anticipo', label: 'Anticipo para iniciar', unidad: '%' },
   { k: 'validezDias', label: 'Validez de la cotización', unidad: 'días' },
+  { k: 'separacionCorte', label: 'Separación entre piezas', unidad: 'cm, para la vista de la plancha' },
 ];
 
 const CAMPOS_PDF: { k: keyof DatosPdf; label: string; largo?: boolean }[] = [

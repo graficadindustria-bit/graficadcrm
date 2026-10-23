@@ -12,6 +12,8 @@ import {
 } from './tarifas';
 import { faltaInstalar, useTarifas } from './useTarifas';
 import { nombreArchivoPdf, pdfCotizacion } from './pdfCotizacion';
+import { MEDIDAS_HOJA, acomodarPiezas } from './plancha';
+import VistaPlancha from './VistaPlancha';
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL;
 
@@ -426,6 +428,7 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
                     Tiempo estimado a {m.velocidad} mm/s{m.supuesto ? ' (velocidad supuesta, conviene poner los minutos de RDWorks)' : ''}.
                   </p>
                 )}
+                <PiezasPlancha item={item} separacion={tarifas.separacionCorte} onCambiar={(cambios) => cambiarItem(item.id, cambios)} />
               </Tarjeta>
             );
           })}
@@ -543,6 +546,11 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
                         </div>
                       ))}
                     </div>
+                    {item.cortes?.length ? (
+                      <div className="mt-2">
+                        <VistaPlancha piezas={item.cortes} hoja={hojaDe(item.lamina)} separacion={tarifas.separacionCorte} alto={150} />
+                      </div>
+                    ) : null}
                     <div className="text-[12px] mt-1.5 tabular-nums" style={{ color: TEXTO_TERCIARIO }}>
                       Lámina {formatoBs(ci.precioMaterial)} · Corte {ci.detalleCorte} = {formatoBs(ci.corte)}
                       {ci.descuentoRouter ? ` · Router −${formatoBs(ci.descuentoRouter)}` : ''}
@@ -587,6 +595,53 @@ export default function Cotizador({ conversaciones, conversacionInicial, onAbrir
         )}
       </div>
       </div>
+    </div>
+  );
+}
+
+const hojaDe = (l: Lamina) => MEDIDAS_HOJA[l === 'ninguna' ? 'entera' : l];
+
+// Piezas a cortar de un ítem y su vista previa en la plancha, con atajos para
+// pasar al ítem las láminas y los metros de corte que salen del acomodo.
+function PiezasPlancha({ item, separacion, onCambiar }: { item: ItemCotizacion; separacion: number; onCambiar: (cambios: Partial<ItemCotizacion>) => void }) {
+  const cortes = item.cortes || [];
+  const cambiar = (i: number, cambios: Partial<(typeof cortes)[number]>) => onCambiar({ cortes: cortes.map((p, j) => (j === i ? { ...p, ...cambios } : p)) });
+  const hoja = hojaDe(item.lamina);
+  const r = useMemo(() => acomodarPiezas(cortes, hoja, separacion), [cortes, hoja, separacion]);
+  const celdaN = `${campo} tabular-nums`;
+  return (
+    <div className="flex flex-col gap-2 pt-2" style={{ borderTop: '1px dashed var(--line-2)' }}>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <span className="text-[12.5px] font-semibold" style={{ color: TEXTO_PRIMARIO }}>Piezas a cortar (cm) · vista de la plancha</span>
+        <Boton tamano="sm" variante="secundario" icono={Plus} onClick={() => onCambiar({ cortes: [...cortes, { ancho: 0, alto: 0, cantidad: 1 }] })}>Agregar medida</Boton>
+      </div>
+      {cortes.map((p, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <input aria-label="Ancho en cm" type="number" min={0} step={0.5} value={p.ancho || ''} placeholder="Ancho" onChange={(e) => cambiar(i, { ancho: Math.max(0, Number(e.target.value) || 0) })} className={celdaN} style={{ ...campoStyle, maxWidth: 90 }} />
+          <span style={{ color: TEXTO_TERCIARIO }}>×</span>
+          <input aria-label="Alto en cm" type="number" min={0} step={0.5} value={p.alto || ''} placeholder="Alto" onChange={(e) => cambiar(i, { alto: Math.max(0, Number(e.target.value) || 0) })} className={celdaN} style={{ ...campoStyle, maxWidth: 90 }} />
+          <span className="text-[12px]" style={{ color: TEXTO_TERCIARIO }}>cant.</span>
+          <input aria-label="Cantidad" type="number" min={1} step={1} value={p.cantidad || ''} onChange={(e) => cambiar(i, { cantidad: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} className={celdaN} style={{ ...campoStyle, maxWidth: 70 }} />
+          <button aria-label="Quitar medida" onClick={() => onCambiar({ cortes: cortes.filter((_, j) => j !== i) })} className="p-1 rounded-md" style={{ color: TEXTO_TERCIARIO }}><Trash2 size={14} /></button>
+        </div>
+      ))}
+      {cortes.length > 0 && (
+        <>
+          <VistaPlancha piezas={cortes} hoja={hoja} separacion={separacion} />
+          <div className="flex gap-2 flex-wrap">
+            {item.lamina !== 'ninguna' && r.planchas.length > 0 && r.planchas.length !== item.laminas && (
+              <Boton tamano="sm" variante="secundario" onClick={() => onCambiar({ laminas: r.planchas.length })}>Usar {r.planchas.length} lámina{r.planchas.length === 1 ? '' : 's'}</Boton>
+            )}
+            {r.perimetroM > 0 && Math.abs(r.perimetroM - item.metros) > 0.05 && (
+              <Boton tamano="sm" variante="secundario" onClick={() => onCambiar({ metros: r.perimetroM })}>Usar {String(r.perimetroM).replace('.', ',')} m de corte</Boton>
+            )}
+            {(() => {
+              const total = cortes.reduce((t, p) => t + (p.ancho > 0 && p.alto > 0 ? p.cantidad : 0), 0);
+              return total > 0 && total !== item.piezas ? <Boton tamano="sm" variante="secundario" onClick={() => onCambiar({ piezas: total })}>Usar {total} piezas</Boton> : null;
+            })()}
+          </div>
+        </>
+      )}
     </div>
   );
 }

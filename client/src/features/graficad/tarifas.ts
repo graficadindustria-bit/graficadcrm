@@ -38,6 +38,8 @@ export interface Tarifas {
   factorMedia: number;
   anticipo: number;
   validezDias: number;
+  /** Separación entre piezas y contra el borde de la lámina, en cm. */
+  separacionCorte: number;
   // Línea de WhatsApp desde la que salen las cotizaciones (la corporativa).
   // Vacía: sale por la línea del chat del cliente.
   lineaCotizaciones?: string | null;
@@ -80,6 +82,8 @@ export interface ItemCotizacion {
   piezas: number;
   /** Imagen de referencia que va en el PDF para el cliente. */
   imagen?: string | null;
+  /** Piezas rectangulares a cortar (cm), para la vista previa de la plancha. */
+  cortes?: { ancho: number; alto: number; cantidad: number }[];
 }
 
 export interface DatosCotizacion {
@@ -126,6 +130,7 @@ export const TARIFAS_POR_DEFECTO: Tarifas = {
   factorMedia: 0.54,
   anticipo: 50,
   validezDias: 7,
+  separacionCorte: 0.5,
   materiales: [
     mat('Acrílico', 'Transparente', 2, 625, 337.5, 'minuto'),
     mat('Acrílico', 'Transparente', 3, 837.5, 443.75, 'minuto'),
@@ -284,6 +289,7 @@ export function textoOrdenCorte(numero: string, cliente: string, d: DatosCotizac
       `   Máquina: ${item.maquina === 'laser' ? 'láser' : 'CNC router'}`,
       `   Corte: ${formatoNumero(item.metros, 1)} m${ci.minutos !== null ? ` · ${formatoNumero(ci.minutos, 1)} min ${item.minutosRdworks !== null ? '(RDWorks)' : `(estimado a ${m?.velocidad} mm/s)`}` : ''}`,
       ...(item.grabadoMin ? [`   Grabado relleno: ${item.grabadoMin} min`] : []),
+      ...(item.cortes?.some((p) => p.ancho > 0 && p.alto > 0) ? [`   Medidas: ${item.cortes.filter((p) => p.ancho > 0 && p.alto > 0).map((p) => `${formatoNumero(p.ancho, 1)} × ${formatoNumero(p.alto, 1)} cm × ${p.cantidad}`).join(', ')}`] : []),
       `   Piezas: ${item.piezas}`,
     ].join('\n');
   });

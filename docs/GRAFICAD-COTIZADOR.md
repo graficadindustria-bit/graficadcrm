@@ -33,6 +33,10 @@ Se suman la lámina (lista de precios de la web), diseño, armado, instalación 
 
 Con **Enviar en PDF** marcado, el cotizador arma un PDF con el formato de las proformas de Graficad: franja naranja con el logo de Graficad y la frase, cliente y fecha, cada ítem con su imagen de referencia, el total y el pie con términos y contacto. Se manda un saludo corto y el PDF como documento. **Descargar PDF** lo baja sin enviarlo. La frase, el contacto y los términos por defecto se editan en **Catálogo y tarifas → PDF de la cotización**.
 
+## Vista de la plancha
+
+En cada ítem, **Piezas a cortar (cm)** recibe las medidas de las piezas (ancho × alto × cantidad). El cotizador las acomoda en la lámina elegida (entera 122 × 244, media 122 × 122, cuarta 122 × 60) para ocupar el menor espacio: algoritmo MaxRects, con rotación de 90° y una separación entre piezas que se configura en **Catálogo y tarifas**. Muestra cuántas láminas hacen falta, el aprovechamiento y el perímetro de corte, con botones para pasar esos valores al ítem. La vista también sale en la orden de corte. Las piezas se toman como rectángulos (su caja exterior).
+
 ## Desde qué número sale
 
 En **Catálogo y tarifas → Enviar cotizaciones desde** se elige la línea corporativa. Si no se elige ninguna, la cotización sale por la línea donde escribió el cliente. En el cotizador, **Enviar desde** permite cambiarla para una cotización puntual.
